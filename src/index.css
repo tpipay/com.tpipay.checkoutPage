@@ -1,0 +1,138 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Custom Animations ─────────────────────────────────────────── */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeInScale {
+  from { opacity: 0; transform: scale(0.95); }
+  to   { opacity: 1; transform: scale(1); }
+}
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(16px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes slideInLeft {
+  from { opacity: 0; transform: translateX(-16px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes successBounce {
+  0%   { transform: scale(0); opacity: 0; }
+  50%  { transform: scale(1.15); opacity: 1; }
+  70%  { transform: scale(0.95); }
+  100% { transform: scale(1); }
+}
+@keyframes checkDraw {
+  from { stroke-dashoffset: 80; }
+  to   { stroke-dashoffset: 0; }
+}
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+@keyframes timerPulse {
+  0%, 100% { color: inherit; }
+  50%       { color: #f59e0b; }
+}
+@keyframes timerWarning {
+  0%, 100% { color: #ef4444; opacity: 1; }
+  50%       { opacity: 0.6; }
+}
+@keyframes glowPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(139,92,246,0); }
+  50%       { box-shadow: 0 0 0 6px rgba(139,92,246,0.15); }
+}
+@keyframes progressFill {
+  from { width: 0; }
+  to   { width: 100%; }
+}
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50%       { transform: translateY(-4px); }
+}
+@keyframes statusDot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.4; transform: scale(0.8); }
+}
+
+/* ─── Animation Utilities ───────────────────────────────────────── */
+.animate-fade-in        { animation: fadeIn 0.35s ease both; }
+.animate-fade-in-scale  { animation: fadeInScale 0.3s ease both; }
+.animate-slide-right    { animation: slideInRight 0.3s ease both; }
+.animate-slide-left     { animation: slideInLeft 0.3s ease both; }
+.animate-success-bounce { animation: successBounce 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) both; }
+.animate-timer-warning  { animation: timerWarning 1s ease infinite; }
+.animate-glow-pulse     { animation: glowPulse 2s ease infinite; }
+.animate-float          { animation: float 3s ease-in-out infinite; }
+.animate-status-dot     { animation: statusDot 1.4s ease infinite; }
+
+.check-draw {
+  stroke-dasharray: 80;
+  stroke-dashoffset: 80;
+  animation: checkDraw 0.5s ease 0.3s forwards;
+}
+
+/* ─── Skeleton shimmer ──────────────────────────────────────────── */
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    rgba(30,41,59,0.8) 25%,
+    rgba(51,65,85,0.6) 50%,
+    rgba(30,41,59,0.8) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s infinite;
+}
+
+/* ─── Custom scrollbar ──────────────────────────────────────────── */
+.scrollbar-thin::-webkit-scrollbar        { width: 4px; }
+.scrollbar-thin::-webkit-scrollbar-track  { background: transparent; }
+.scrollbar-thin::-webkit-scrollbar-thumb  { background: rgba(100,116,139,0.3); border-radius: 4px; }
+.scrollbar-thin::-webkit-scrollbar-thumb:hover { background: rgba(100,116,139,0.5); }
+.scrollbar-none { scrollbar-width: none; }
+.scrollbar-none::-webkit-scrollbar { display: none; }
+
+/* ─── Payment method tab pill active glow ───────────────────────── */
+.tab-pill-active {
+  box-shadow: 0 0 0 1px rgba(139,92,246,0.3), 0 4px 16px rgba(139,92,246,0.1);
+}
+
+/* ─── Focus accessibility ───────────────────────────────────────── */
+.focus-ring:focus-visible {
+  outline: 2px solid rgba(139,92,246,0.7);
+  outline-offset: 2px;
+}
+
+/* ─── Copy button flash ─────────────────────────────────────────── */
+.copy-flash {
+  animation: fadeInScale 0.2s ease;
+}
+
+/* ─── UPI deep link buttons ─────────────────────────────────────── */
+.upi-app-btn {
+  @apply flex flex-col items-center justify-center gap-1.5 py-3 px-2 rounded-xl border border-slate-800/70 hover:border-violet-500/40 bg-slate-950/50 hover:bg-slate-900 transition-all cursor-pointer text-center;
+}
+.upi-app-btn:hover {
+  box-shadow: 0 0 0 1px rgba(139,92,246,0.15), 0 4px 12px rgba(0,0,0,0.3);
+}
+
+/* ─── Progress steps ────────────────────────────────────────────── */
+.step-connector {
+  @apply h-[2px] flex-1 bg-slate-800 relative overflow-hidden;
+}
+.step-connector.active::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, #7c3aed, #4f46e5);
+  animation: progressFill 0.4s ease forwards;
+}
+
+/* ─── QR code grid squares ──────────────────────────────────────── */
+.qr-grid-square {
+  border-radius: 2px;
+  transition: opacity 0.2s ease;
+}
