@@ -1,4 +1,32 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || window.location.origin;
+const getApiBaseUrl = () => {
+  const configured = import.meta.env.VITE_API_BASE_URL;
+
+  // 1) Prefer configured value if it is a non-empty string.
+  if (typeof configured === "string" && configured.trim().length > 0) {
+    return configured.trim().replace(/\/+$/, "");
+  }
+
+  // 2) Fallback to current origin (only if valid/non-empty).
+  try {
+    const origin = typeof window !== "undefined" && window.location && typeof window.location.origin === "string"
+      ? window.location.origin
+      : "";
+
+    if (origin && origin.trim().length > 0) {
+      return origin.trim().replace(/\/+$/, "");
+    }
+  } catch {
+    // ignore and move to dev fallback
+  }
+
+
+  // 3) Local development fallback: ensure local backend on port 8080.
+  // Only used when both (1) and (2) are unavailable.
+  return "http://localhost:8080";
+};
+
+const API_BASE_URL = getApiBaseUrl();
+
 
 const getSecureRandom = () => {
   const array = new Uint32Array(1);

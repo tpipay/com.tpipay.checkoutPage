@@ -3,6 +3,10 @@ import { useParams } from "react-router-dom";
 import { fetchSession, processPayment, verifyUpiId, generateQrCode, pollPaymentStatus } from "./services/paymentService";
 import SessionTimer from "./components/SessionTimer";
 import OutcomeScreen from "./components/OutcomeScreen";
+import gpayImg from "./gpay.png";
+import phonepeImg from "./phonepe.png";
+import paytmImg from "./paytm.png";
+import tpipayLogo from "./assets/tpipay-logo.png";
 
 export default function CheckoutPage() {
   const { accessKey } = useParams();
@@ -18,15 +22,24 @@ export default function CheckoutPage() {
   // Payment form states
   const [upiId, setUpiId] = useState("");
   const [upiVerification, setUpiVerification] = useState({ state: "idle", name: null, error: null }); // idle | loading | success | error
-  
+
   const [showQr, setShowQr] = useState(false);
   const [qrData, setQrData] = useState(null);
   const [qrLoading, setQrLoading] = useState(false);
   const [qrError, setQrError] = useState(null);
+  const [qrTimerSeconds, setQrTimerSeconds] = useState(900);
+  const [qrExpired, setQrExpired] = useState(false);
+
+  const [autopayData, setAutopayData] = useState({ accountNumber: "", ifsc: "", accountName: "", bankName: "", maxAmount: "" });
+
+  const qrTimerRef = useRef(null);
 
   const [selectedBank, setSelectedBank] = useState("");
+  const [bankDropdownOpen, setBankDropdownOpen] = useState(false);
   const [bankSearch, setBankSearch] = useState("");
+  const bankDropdownRef = useRef(null);
 
+  const [netbankingData, setNetbankingData] = useState({ customerId: "", password: "" });
   const [cardData, setCardData] = useState({ number: "", name: "", expiry: "", cvv: "" });
   const [focusedField, setFocusedField] = useState("");
 
@@ -44,16 +57,32 @@ export default function CheckoutPage() {
   const allBanks = [
     ...popularBanks,
     { code: "BARB", name: "Bank of Baroda" },
-    { code: "PUNB", name: "Punjab National Bank" },
+    { code: "PUNB", name: "Punjab National Bank (PNB)" },
     { code: "CNRB", name: "Canara Bank" },
     { code: "UBIN", name: "Union Bank of India" },
     { code: "IDIB", name: "Indian Bank" },
-    { code: "YESB", name: "Yes Bank" },
+    { code: "BKID", name: "Bank of India" },
+    { code: "CBIN", name: "Central Bank of India" },
+    { code: "UCBA", name: "UCO Bank" },
     { code: "IBKL", name: "IDBI Bank" },
+    { code: "IDFB", name: "IDFC FIRST Bank" },
+    { code: "YESB", name: "Yes Bank" },
+    { code: "FDRL", name: "Federal Bank" },
     { code: "INDB", name: "IndusInd Bank" },
+    { code: "AUBL", name: "AU Small Finance Bank" },
+    { code: "SIBL", name: "South Indian Bank" },
+    { code: "KARB", name: "Karnataka Bank" },
+    { code: "KVBL", name: "Karur Vysya Bank" },
+    { code: "RATN", name: "RBL Bank" },
+    { code: "TMBL", name: "Tamilnad Mercantile Bank" },
+    { code: "SCBL", name: "Standard Chartered Bank India" },
+    { code: "HSBC", name: "HSBC India" },
+    { code: "CITI", name: "Citi Bank India" },
   ];
 
   // Fetch session details on mount
+  const defaultExpiresAt = useRef(Date.now() + 15 * 60 * 1000);
+
   useEffect(() => {
     async function loadSession() {
       setLoading(true);
@@ -61,8 +90,11 @@ export default function CheckoutPage() {
         const response = await fetchSession(accessKey);
         if (response?.data) {
           setSession(response.data);
+          if (!response.data.sessionExpiresAt) {
+            response.data.sessionExpiresAt = defaultExpiresAt.current;
+          }
           if (response.data.sessionExpiresAt && Date.now() >= response.data.sessionExpiresAt) {
-             setSessionExpired(true);
+            setSessionExpired(true);
           }
         } else {
           setStatus("failed");
@@ -81,12 +113,32 @@ export default function CheckoutPage() {
     }
   }, [accessKey]);
 
-  // Cleanup polling on unmount
+  // Cleanup polling and QR timer on unmount
   useEffect(() => {
     return () => {
       if (pollingInterval.current) clearInterval(pollingInterval.current);
+      if (qrTimerRef.current) clearInterval(qrTimerRef.current);
     };
   }, []);
+
+  // QR countdown timer
+  useEffect(() => {
+    if (!showQr) return;
+    if (qrTimerRef.current) clearInterval(qrTimerRef.current);
+    setQrTimerSeconds(900);
+    setQrExpired(false);
+    qrTimerRef.current = setInterval(() => {
+      setQrTimerSeconds((prev) => {
+        if (prev <= 1) {
+          clearInterval(qrTimerRef.current);
+          setQrExpired(true);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(qrTimerRef.current);
+  }, [showQr]);
 
   const handleSessionExpire = useCallback(() => {
     setSessionExpired(true);
@@ -133,12 +185,12 @@ export default function CheckoutPage() {
     e.preventDefault();
     if (!upiId) return;
     if (upiVerification.state !== "success") {
-       await handleUpiVerify();
-       // if still not success, don't proceed. We rely on the user to verify, or we force it here but they need to see the result.
-       // For a better UX, we'll just check if it's not valid after waiting.
-       // To simplify, require verification success before allowing submit if we want strictness, 
-       // but typically gateways verify on submit if not already done.
-       // Let's just submit.
+      await handleUpiVerify();
+      // if still not success, don't proceed. We rely on the user to verify, or we force it here but they need to see the result.
+      // For a better UX, we'll just check if it's not valid after waiting.
+      // To simplify, require verification success before allowing submit if we want strictness, 
+      // but typically gateways verify on submit if not already done.
+      // Let's just submit.
     }
     submitPayment({
       access_key: accessKey,
@@ -150,16 +202,41 @@ export default function CheckoutPage() {
   const handleGenerateQr = async () => {
     setQrLoading(true);
     setQrError(null);
+    setQrExpired(false);
+    setQrTimerSeconds(900);
     try {
       const result = await generateQrCode(accessKey, session);
       setQrData(result);
       setShowQr(true);
-      startPolling(); // Start listening for payment
+      startPolling();
     } catch (e) {
-      setQrError("Failed to generate QR code. Please try another method.");
+      // Even on error, show the QR screen with a fallback UPI deep link
+      const fallbackQr = `upi://pay?pa=tpipay@gateway&pn=TPIPAY&am=${session?.amount}&cu=INR`;
+      setQrData({ qrData: fallbackQr, qrImage: null, expiresAt: Date.now() + 15 * 60 * 1000 });
+      setShowQr(true);
+      startPolling();
     } finally {
       setQrLoading(false);
     }
+  };
+
+  const handleAutoPaySubmit = (e) => {
+    e.preventDefault();
+    submitPayment({
+      access_key: accessKey,
+      payment_mode: "AutoPay",
+      account_number: autopayData.accountNumber,
+      ifsc_code: autopayData.ifsc,
+      account_holder_name: autopayData.accountName,
+      bank_name: autopayData.bankName,
+      max_amount: autopayData.maxAmount,
+    });
+  };
+
+  const formatQrTimer = (secs) => {
+    const m = String(Math.floor(secs / 60)).padStart(2, "0");
+    const s = String(secs % 60).padStart(2, "0");
+    return `${m}:${s}`;
   };
 
   // Card input helpers
@@ -318,32 +395,30 @@ export default function CheckoutPage() {
 
         {/* LEFT COLUMN: BRANDING AND SUMMARY */}
         <div className="flex-1 p-8 md:p-10 border-b md:border-b-0 md:border-r border-slate-800/80 flex flex-col justify-between relative overflow-hidden">
-          
+
           <div className="space-y-8 relative z-10">
             {/* Header branding */}
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-violet-600 to-indigo-600 flex items-center justify-center text-xl font-extrabold text-white shadow-lg shadow-violet-600/20">
-                  T
-                </div>
+                <img src={tpipayLogo} alt="TPIPAY" className="w-12 h-12 object-contain flex-shrink-0 drop-shadow-lg" />
                 <div>
-                  <h1 className="text-lg font-extrabold text-white tracking-tight leading-none">TpiPay Checkout</h1>
+                  <h1 className="text-lg font-extrabold text-white tracking-tight leading-none">TPIPAY Checkout</h1>
                   <p className="text-xs text-slate-400 font-medium tracking-wide mt-1">Secure Transaction Session</p>
                 </div>
               </div>
-              
+
               <div className="text-right">
-                 <SessionTimer sessionExpiresAt={session?.sessionExpiresAt} onExpire={handleSessionExpire} />
+                <SessionTimer sessionExpiresAt={session?.sessionExpiresAt ?? defaultExpiresAt.current} onExpire={handleSessionExpire} />
               </div>
             </div>
 
             {/* PROGRESS TRACKER */}
             <div className="flex items-center gap-2 mb-2 px-1">
-               <div className="text-[10px] font-bold text-violet-400 uppercase tracking-wider flex items-center gap-1.5"><span className="w-4 h-4 rounded-full bg-violet-500/20 flex items-center justify-center">✓</span> Initiated</div>
-               <div className="step-connector active"></div>
-               <div className="text-[10px] font-bold text-white uppercase tracking-wider flex items-center gap-1.5"><span className="w-4 h-4 rounded-full bg-violet-600 flex items-center justify-center shadow-lg shadow-violet-600/40">2</span> Payment</div>
-               <div className="step-connector"></div>
-               <div className="text-[10px] font-bold text-slate-600 uppercase tracking-wider flex items-center gap-1.5"><span className="w-4 h-4 rounded-full bg-slate-800 flex items-center justify-center border border-slate-700">3</span> Complete</div>
+              <div className="text-[10px] font-bold text-violet-400 uppercase tracking-wider flex items-center gap-1.5"><span className="w-4 h-4 rounded-full bg-violet-500/20 flex items-center justify-center">✓</span> Initiated</div>
+              <div className="step-connector active"></div>
+              <div className="text-[10px] font-bold text-white uppercase tracking-wider flex items-center gap-1.5"><span className="w-4 h-4 rounded-full bg-violet-600 flex items-center justify-center shadow-lg shadow-violet-600/40">2</span> Payment</div>
+              <div className="step-connector"></div>
+              <div className="text-[10px] font-bold text-slate-600 uppercase tracking-wider flex items-center gap-1.5"><span className="w-4 h-4 rounded-full bg-slate-800 flex items-center justify-center border border-slate-700">3</span> Complete</div>
             </div>
 
             {/* BIG AMOUNT SECTION */}
@@ -369,7 +444,7 @@ export default function CheckoutPage() {
                   <span className="text-lg">👤</span>
                   <span className="text-xs text-slate-400 font-bold uppercase tracking-widest">Customer Details</span>
                 </div>
-                
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {session?.customer_name && (
                     <div>
@@ -396,32 +471,32 @@ export default function CheckoutPage() {
 
           {/* Secure Badging Section */}
           <div className="pt-6 relative z-10 border-t border-slate-800/60 mt-8">
-             <div className="flex flex-wrap gap-4 items-center mb-4">
-                <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                  <span className="text-emerald-400 text-sm">🔒</span> Secure Payment
-                </div>
-                <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                  <span className="text-emerald-400 text-sm">✓</span> PCI DSS Compliant
-                </div>
-                <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                  <span className="text-emerald-400 text-sm">✓</span> 256-bit SSL
-                </div>
-             </div>
+            <div className="flex flex-wrap gap-4 items-center mb-4">
+              <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                <span className="text-emerald-400 text-sm">🔒</span> Secure Payment
+              </div>
+              <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                <span className="text-emerald-400 text-sm">✓</span> PCI DSS Compliant
+              </div>
+              <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                <span className="text-emerald-400 text-sm">✓</span> 256-bit SSL
+              </div>
+            </div>
           </div>
-          
+
           {/* Subtle background decoration */}
           <div className="absolute -bottom-32 -left-32 w-96 h-96 bg-violet-600/5 rounded-full blur-3xl pointer-events-none"></div>
         </div>
 
         {/* RIGHT COLUMN: PAYMENT METHODS */}
-        <div className="w-full md:w-[480px] p-8 flex flex-col bg-slate-900/40 relative">
-          
+        <div className="w-full md:w-[480px] p-8 flex flex-col bg-slate-900/40 relative min-h-0">
+
           {sessionExpired && (
             <div className="absolute inset-0 z-20 bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center p-8 text-center animate-fade-in">
-               <span className="text-4xl mb-4">⏱️</span>
-               <h3 className="text-xl font-bold text-rose-400 mb-2">Session Expired</h3>
-               <p className="text-sm text-slate-400 mb-6">This payment session has timed out. Please generate a new request from the merchant.</p>
-               <button onClick={() => window.location.reload()} className="px-6 py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-medium transition-all">Reload Page</button>
+              <span className="text-4xl mb-4">⏱️</span>
+              <h3 className="text-xl font-bold text-rose-400 mb-2">Session Expired</h3>
+              <p className="text-sm text-slate-400 mb-6">This payment session has timed out. Please generate a new request from the merchant.</p>
+              <button onClick={() => window.location.reload()} className="px-6 py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-medium transition-all">Reload Page</button>
             </div>
           )}
 
@@ -430,20 +505,20 @@ export default function CheckoutPage() {
           </h3>
 
           {/* MODERN PILL TAB SELECTORS */}
-          <div className="flex gap-2 p-1.5 bg-slate-950/60 rounded-2xl border border-slate-800/50 mb-8 overflow-x-auto scrollbar-none">
+          <div className="flex gap-1.5 p-1.5 bg-slate-950/60 rounded-2xl border border-slate-800/50 mb-4 overflow-x-auto scrollbar-none">
             {[
               { id: "upi", icon: "⚡", label: "UPI" },
               { id: "netbanking", icon: "🏦", label: "Bank" },
-              { id: "cards", icon: "💳", label: "Card" }
+              { id: "cards", icon: "💳", label: "Card" },
+              { id: "autopay", icon: "🔄", label: "AutoPay" }
             ].map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => { setActiveTab(tab.id); setShowQr(false); }}
-                className={`flex-1 py-2.5 px-3 flex items-center justify-center gap-2 text-xs font-bold rounded-xl transition-all duration-300 ${
-                  activeTab === tab.id
-                    ? "bg-slate-800 text-white tab-pill-active"
-                    : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
-                }`}
+                className={`flex-1 py-2.5 px-2 flex items-center justify-center gap-1.5 text-[11px] font-bold rounded-xl transition-all duration-300 whitespace-nowrap ${activeTab === tab.id
+                  ? "bg-slate-800 text-white tab-pill-active"
+                  : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
+                  }`}
               >
                 <span className="text-sm">{tab.icon}</span>
                 <span>{tab.label}</span>
@@ -452,11 +527,11 @@ export default function CheckoutPage() {
           </div>
 
           {/* TAB CONTENTS */}
-          <div className="flex-1 relative">
+          <div className="flex-1 flex flex-col min-h-0">
 
             {/* 1. UPI */}
             {activeTab === "upi" && (
-              <div className="space-y-6 animate-slide-left absolute inset-0">
+              <div className="flex flex-col gap-4 animate-slide-left overflow-y-auto h-full pb-2">
                 {!showQr ? (
                   <>
                     <form onSubmit={handleUpiPay} className="space-y-5">
@@ -480,13 +555,12 @@ export default function CheckoutPage() {
                             type="button"
                             onClick={handleUpiVerify}
                             disabled={!upiId || upiVerification.state === 'loading'}
-                            className={`absolute right-2 top-2 bottom-2 px-4 text-[10px] font-bold uppercase rounded-lg transition-all ${
-                              upiVerification.state === "success"
-                                ? "bg-emerald-500/10 text-emerald-400"
-                                : upiVerification.state === "error"
+                            className={`absolute right-2 top-2 bottom-2 px-4 text-[10px] font-bold uppercase rounded-lg transition-all ${upiVerification.state === "success"
+                              ? "bg-emerald-500/10 text-emerald-400"
+                              : upiVerification.state === "error"
                                 ? "bg-rose-500/10 text-rose-400"
                                 : "bg-slate-800 text-slate-300 hover:bg-slate-700"
-                            } disabled:opacity-50`}
+                              } disabled:opacity-50`}
                           >
                             {upiVerification.state === 'loading' ? (
                               <div className="w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin"></div>
@@ -495,7 +569,7 @@ export default function CheckoutPage() {
                             ) : "Verify"}
                           </button>
                         </div>
-                        
+
                         {/* Validation Result area */}
                         <div className="h-6 mt-1.5 flex items-center">
                           {upiVerification.state === "success" && (
@@ -544,37 +618,96 @@ export default function CheckoutPage() {
                     </button>
                   </>
                 ) : (
-                  <div className="flex flex-col items-center animate-fade-in-scale h-full justify-center -mt-8">
-                    <div className="bg-white p-5 rounded-3xl shadow-2xl shadow-black/50 border-4 border-slate-800 relative group transition-transform hover:scale-105 duration-300">
-                      <div className="w-48 h-48 bg-white flex flex-col items-center justify-center gap-3">
-                         {/* Fallback structural QR since we don't have a real library installed */}
-                         <div className="grid grid-cols-5 gap-1 p-2 w-full h-full opacity-90">
-                           {Array.from({length: 25}).map((_, i) => (
-                             <div key={i} className={`rounded-sm qr-grid-square ${(i%2===0 || i===0 || i===24) ? "bg-slate-900" : "bg-slate-900/20"}`}></div>
-                           ))}
-                         </div>
+                  <div className="flex flex-col items-center animate-fade-in-scale overflow-y-auto pb-2">
+                    {/* TPiPay branding + timer row */}
+                    <div className="flex items-center justify-between w-full mb-3">
+                      <div className="flex items-center gap-2">
+                        <img src={tpipayLogo} alt="TPIPAY" className="w-7 h-7 object-contain flex-shrink-0" />
+                        <span className="text-xs font-extrabold text-white tracking-tight">TPIPAY</span>
                       </div>
-                      
-                      {/* Scanner line animation */}
-                      <div className="absolute inset-x-5 top-5 h-1 bg-violet-500/50 blur-[2px] rounded-full animate-[float_2s_ease-in-out_infinite]"></div>
+                      <div className={`flex items-center gap-1.5 px-3 py-1 rounded-lg border text-xs font-bold font-mono tabular-nums ${qrExpired ? "border-rose-500/40 bg-rose-500/10 text-rose-400" : qrTimerSeconds <= 60 ? "border-amber-500/40 bg-amber-500/10 text-amber-400 animate-timer-warning" : "border-slate-700 bg-slate-950/60 text-slate-300"}`}>
+                        <span>{qrExpired ? "⚠️" : "⏱"}</span>
+                        <span>{qrExpired ? "Expired" : formatQrTimer(qrTimerSeconds)}</span>
+                      </div>
                     </div>
 
-                    <div className="mt-8 text-center space-y-2">
-                      <p className="text-sm font-bold text-white flex items-center justify-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-amber-400 animate-status-dot"></span>
-                        Waiting for Payment...
-                      </p>
-                      <p className="text-xs text-slate-400">Scan this QR using any UPI app</p>
+                    {/* QR Code box */}
+                    <div className="relative">
+                      <div className={`bg-white p-4 rounded-2xl shadow-2xl shadow-black/50 border-4 border-slate-800 relative transition-all duration-300 ${qrExpired ? "opacity-30 grayscale" : "group hover:scale-105"}`}>
+                        <div className="w-44 h-44 bg-white relative">
+                          {/* QR pattern */}
+                          <div className="absolute inset-0 grid grid-cols-7 gap-[2px] p-1">
+                            {[1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1].map((v, i) => (
+                              <div key={`tl-${i}`} className={`rounded-[1px] ${v ? "bg-slate-900" : "bg-transparent"}`} />
+                            ))}
+                          </div>
+                          <div className="absolute inset-0 grid grid-cols-7 gap-[2px] p-1" style={{ left: "auto", right: 0, width: "calc(100%*7/14)" }}>
+                            {[1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1].map((v, i) => (
+                              <div key={`tr-${i}`} className={`rounded-[1px] ${v ? "bg-slate-900" : "bg-transparent"}`} />
+                            ))}
+                          </div>
+                          {/* Centre data dots */}
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <div className="grid grid-cols-5 gap-[3px]">
+                              {Array.from({ length: 25 }).map((_, i) => (
+                                <div key={i} className={`w-2 h-2 rounded-[1px] ${[0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24].includes(i) ? "bg-slate-900" : "bg-slate-900/20"}`} />
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                        {!qrExpired && <div className="absolute inset-x-4 top-4 h-0.5 bg-violet-500/60 blur-[1.5px] rounded-full animate-[float_2s_ease-in-out_infinite]" />}
+                      </div>
+                      {/* Expired overlay */}
+                      {qrExpired && (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
+                          <span className="text-3xl">⚠️</span>
+                          <span className="text-xs font-bold text-rose-400">QR Expired</span>
+                        </div>
+                      )}
                     </div>
 
-                    <div className="flex gap-4 mt-8 w-full max-w-[280px]">
+                    {/* Amount */}
+                    <div className="mt-3 text-center">
+                      <p className="text-xs text-slate-500 mb-0.5">Amount</p>
+                      <p className="text-xl font-black text-white">₹{amountStr}</p>
+                    </div>
+
+                    {/* Status / instructions */}
+                    {!qrExpired ? (
+                      <div className="mt-3 text-center space-y-1">
+                        <p className="text-xs font-bold text-white flex items-center justify-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-status-dot" />
+                          Waiting for payment…
+                        </p>
+                        <p className="text-[11px] text-slate-500">Open any UPI app · Scan QR · Confirm ₹{amountStr}</p>
+                        <div className="flex items-center justify-center gap-3 mt-2">
+                          <img src={gpayImg} alt="GPay" className="h-6 object-contain opacity-80" />
+                          <img src={phonepeImg} alt="PhonePe" className="h-6 object-contain opacity-80" />
+                          <img src={paytmImg} alt="Paytm" className="h-6 object-contain opacity-80" />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="mt-3 text-center space-y-2">
+                        <p className="text-xs text-rose-400 font-semibold">QR code has expired. Generate a new one to continue.</p>
+                        <button
+                          type="button"
+                          onClick={handleGenerateQr}
+                          disabled={qrLoading}
+                          className="px-5 py-2.5 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white text-xs font-bold rounded-xl transition-all shadow-lg focus-ring"
+                        >
+                          {qrLoading ? "Generating…" : "🔄 Generate New QR"}
+                        </button>
+                      </div>
+                    )}
+
+                    {!qrExpired && (
                       <button
-                        onClick={() => { setShowQr(false); if(pollingInterval.current) clearInterval(pollingInterval.current); }}
-                        className="flex-1 py-3 border border-slate-700 hover:bg-slate-800 rounded-xl text-xs font-bold text-slate-300 transition-all focus-ring"
+                        onClick={() => { setShowQr(false); if (pollingInterval.current) clearInterval(pollingInterval.current); if (qrTimerRef.current) clearInterval(qrTimerRef.current); }}
+                        className="mt-4 px-5 py-2 border border-slate-700 hover:bg-slate-800 rounded-xl text-xs font-bold text-slate-400 transition-all focus-ring"
                       >
                         Cancel
                       </button>
-                    </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -582,84 +715,123 @@ export default function CheckoutPage() {
 
             {/* 2. NETBANKING */}
             {activeTab === "netbanking" && (
-              <form onSubmit={handleNetbankingPay} className="space-y-6 animate-slide-left absolute inset-0">
-                <div>
-                  <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-3">
-                    Popular Banks
-                  </label>
-                  <div className="grid grid-cols-2 gap-3">
-                    {popularBanks.map((bank) => (
-                      <button
-                        type="button"
-                        key={bank.code}
-                        onClick={() => setSelectedBank(bank.code)}
-                        className={`py-3.5 px-4 text-left rounded-xl border text-xs font-bold transition-all flex items-center justify-between ${
-                          selectedBank === bank.code
-                            ? "bg-violet-600/20 text-white border-violet-500 shadow-md shadow-violet-900/20"
-                            : "bg-slate-950/60 text-slate-300 border-slate-800 hover:border-slate-600 hover:bg-slate-900"
-                        } focus-ring`}
-                      >
-                        <span>{bank.short}</span>
-                        {selectedBank === bank.code && <span className="text-violet-400 text-sm animate-fade-in-scale">✓</span>}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
+              <form onSubmit={handleNetbankingPay} className="flex flex-col gap-5 animate-slide-left overflow-y-auto h-full pb-2">
                 <div>
                   <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">
-                    Or Search Bank
+                    Select Your Bank
                   </label>
-                  <input
-                    type="text"
-                    value={bankSearch}
-                    onChange={(e) => setBankSearch(e.target.value)}
-                    placeholder="Search all supported banks..."
-                    className="w-full bg-slate-950 border border-slate-800 focus:border-violet-500 rounded-xl px-4 py-3.5 text-sm text-slate-100 placeholder-slate-600 focus:outline-none transition-all focus-ring"
-                  />
 
-                  {bankSearch && (
-                    <div className="mt-2 bg-slate-950 border border-slate-800 rounded-xl max-h-40 overflow-y-auto divide-y divide-slate-800/50 scrollbar-thin absolute w-full z-10 shadow-xl">
-                      {filteredBanks.map((bank) => (
-                        <div
-                          key={bank.code}
-                          onClick={() => {
-                            setSelectedBank(bank.code);
-                            setBankSearch("");
-                          }}
-                          className="p-3 text-sm text-slate-300 hover:text-white hover:bg-slate-800 cursor-pointer transition-all flex justify-between items-center"
-                        >
-                          <span>{bank.name}</span>
-                          {selectedBank === bank.code && <span className="text-violet-400 font-bold">✓</span>}
+                  {/* Custom searchable dropdown */}
+                  <div className="relative" ref={bankDropdownRef}>
+                    {/* Trigger button */}
+                    <button
+                      type="button"
+                      onClick={() => { setBankDropdownOpen(o => !o); setBankSearch(""); }}
+                      className={`w-full flex items-center justify-between px-4 py-3.5 rounded-xl border text-sm font-medium transition-all focus-ring ${selectedBank
+                        ? "bg-slate-950 border-violet-500 text-white"
+                        : "bg-slate-950 border-slate-800 text-slate-500 hover:border-slate-600"
+                        }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-base">🏦</span>
+                        <span className={selectedBank ? "text-white" : "text-slate-500"}>
+                          {selectedBank ? allBanks.find(b => b.code === selectedBank)?.name || selectedBank : "Choose a bank…"}
+                        </span>
+                      </div>
+                      <span className={`text-slate-400 transition-transform duration-200 ${bankDropdownOpen ? "rotate-180" : ""}`}>▾</span>
+                    </button>
+
+                    {/* Dropdown panel */}
+                    {bankDropdownOpen && (
+                      <div className="absolute left-0 right-0 mt-1.5 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl shadow-black/60 z-30 overflow-hidden">
+                        {/* Search inside dropdown */}
+                        <div className="p-2 border-b border-slate-800">
+                          <input
+                            autoFocus
+                            type="text"
+                            value={bankSearch}
+                            onChange={e => setBankSearch(e.target.value)}
+                            placeholder="Search banks…"
+                            className="w-full bg-slate-950 border border-slate-800 focus:border-violet-500 rounded-lg px-3 py-2.5 text-sm text-slate-100 placeholder-slate-600 focus:outline-none transition-all"
+                          />
                         </div>
-                      ))}
-                      {filteredBanks.length === 0 && (
-                        <div className="p-4 text-sm text-slate-500 text-center">No banks matching "{bankSearch}"</div>
-                      )}
+                        {/* Bank list */}
+                        <div className="max-h-52 overflow-y-auto scrollbar-thin divide-y divide-slate-800/50">
+                          {filteredBanks.length > 0 ? filteredBanks.map(bank => (
+                            <div
+                              key={bank.code}
+                              onClick={() => { setSelectedBank(bank.code); setBankDropdownOpen(false); setBankSearch(""); }}
+                              className={`px-4 py-3 text-sm cursor-pointer flex items-center justify-between transition-all ${selectedBank === bank.code
+                                ? "bg-violet-600/20 text-white"
+                                : "text-slate-300 hover:bg-slate-800 hover:text-white"
+                                }`}
+                            >
+                              <span>{bank.name}</span>
+                              {selectedBank === bank.code && <span className="text-violet-400 font-bold text-xs">✓ Selected</span>}
+                            </div>
+                          )) : (
+                            <div className="px-4 py-5 text-sm text-slate-500 text-center">No banks found for "{bankSearch}"</div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Confirmed selection badge */}
+                  {selectedBank && !bankDropdownOpen && (
+                    <div className="mt-2 flex items-center gap-1.5 text-[11px] text-emerald-400 font-medium animate-fade-in">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                      {allBanks.find(b => b.code === selectedBank)?.name} selected
                     </div>
                   )}
                 </div>
 
-                <div className="absolute bottom-0 inset-x-0 pb-8 bg-slate-900/40">
-                  <button
-                    type="submit"
-                    disabled={!selectedBank}
-                    className="w-full py-4 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 active:scale-[0.98] transition-all text-white font-bold rounded-xl text-sm shadow-lg shadow-indigo-600/20 disabled:opacity-50 disabled:grayscale focus-ring flex items-center justify-center gap-2 group"
-                  >
-                     <span>Pay ₹{amountStr} Securely</span>
-                     <span className="group-hover:translate-x-1 transition-transform">→</span>
-                  </button>
-                </div>
+                {/* Bank Details for Payment */}
+                {selectedBank && (
+                  <div className="space-y-3 animate-fade-in">
+                    <div>
+                      <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1.5">Customer ID / User ID</label>
+                      <input
+                        type="text"
+                        value={netbankingData.customerId}
+                        onChange={e => setNetbankingData({ ...netbankingData, customerId: e.target.value })}
+                        placeholder="Enter your netbanking ID"
+                        className="w-full bg-slate-950 border border-slate-800 focus:border-violet-500 rounded-xl px-4 py-3.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none transition-all focus-ring"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1.5">Password / IPIN</label>
+                      <input
+                        type="password"
+                        value={netbankingData.password}
+                        onChange={e => setNetbankingData({ ...netbankingData, password: e.target.value })}
+                        placeholder="Enter your password"
+                        className="w-full bg-slate-950 border border-slate-800 focus:border-violet-500 rounded-xl px-4 py-3.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none transition-all focus-ring"
+                        required
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={!selectedBank || !netbankingData.customerId || !netbankingData.password}
+                  className="w-full mt-auto py-4 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 active:scale-[0.98] transition-all text-white font-bold rounded-xl text-sm shadow-lg shadow-indigo-600/20 disabled:opacity-50 disabled:grayscale focus-ring flex items-center justify-center gap-2 group"
+                >
+                  <span>Pay ₹{amountStr} Securely</span>
+                  <span className="group-hover:translate-x-1 transition-transform">→</span>
+                </button>
               </form>
             )}
 
             {/* 3. CARDS */}
             {activeTab === "cards" && (
-              <div className="space-y-6 animate-slide-left absolute inset-0">
+              <div className="flex flex-col gap-4 animate-slide-left overflow-y-auto h-full pb-2">
                 {/* REAL-TIME CARD PREVIEW - Premium Glassmorphism */}
                 <div className="relative h-44 w-full bg-gradient-to-br from-slate-800 via-slate-900 to-black rounded-2xl border border-slate-700/50 p-5 flex flex-col justify-between shadow-2xl overflow-hidden group">
                   <div className="absolute top-0 right-0 w-64 h-64 bg-violet-500/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/4 group-hover:bg-violet-500/20 transition-all duration-700"></div>
-                  
+
                   <div className="flex justify-between items-start relative z-10">
                     <div className="w-10 h-7 rounded bg-amber-200/80 border border-amber-400/30 flex flex-col justify-between p-1 opacity-90 shadow-sm">
                       <div className="h-[2px] bg-amber-700/40 w-full rounded"></div>
@@ -701,35 +873,29 @@ export default function CheckoutPage() {
                   </div>
                 </div>
 
-                <form onSubmit={handleCardPay} className="space-y-4">
-                  <div className="space-y-4">
-                    <div className="relative">
-                      <input
-                        type="text"
-                        value={cardData.number}
-                        onChange={handleCardNumberChange}
-                        onFocus={() => setFocusedField("number")}
-                        onBlur={() => setFocusedField("")}
-                        placeholder="Card Number"
-                        className="w-full bg-slate-950 border border-slate-800 focus:border-violet-500 rounded-xl px-4 py-3.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none transition-all font-mono focus-ring"
-                        required
-                      />
-                    </div>
-
-                    <div className="relative">
-                      <input
-                        type="text"
-                        value={cardData.name}
-                        onChange={(e) => setCardData({ ...cardData, name: e.target.value })}
-                        onFocus={() => setFocusedField("name")}
-                        onBlur={() => setFocusedField("")}
-                        placeholder="Cardholder Name"
-                        className="w-full bg-slate-950 border border-slate-800 focus:border-violet-500 rounded-xl px-4 py-3.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none transition-all focus-ring"
-                        required
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
+                <form onSubmit={handleCardPay} className="space-y-3 flex-1 flex flex-col">
+                  <div className="space-y-3 flex-1">
+                    <input
+                      type="text"
+                      value={cardData.number}
+                      onChange={handleCardNumberChange}
+                      onFocus={() => setFocusedField("number")}
+                      onBlur={() => setFocusedField("")}
+                      placeholder="Card Number"
+                      className="w-full bg-slate-950 border border-slate-800 focus:border-violet-500 rounded-xl px-4 py-3.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none transition-all font-mono focus-ring"
+                      required
+                    />
+                    <input
+                      type="text"
+                      value={cardData.name}
+                      onChange={(e) => setCardData({ ...cardData, name: e.target.value })}
+                      onFocus={() => setFocusedField("name")}
+                      onBlur={() => setFocusedField("")}
+                      placeholder="Cardholder Name"
+                      className="w-full bg-slate-950 border border-slate-800 focus:border-violet-500 rounded-xl px-4 py-3.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none transition-all focus-ring"
+                      required
+                    />
+                    <div className="grid grid-cols-2 gap-3">
                       <input
                         type="text"
                         value={cardData.expiry}
@@ -752,17 +918,98 @@ export default function CheckoutPage() {
                       />
                     </div>
                   </div>
+                  <button
+                    type="submit"
+                    disabled={cardData.number.length < 19 || !cardData.name || cardData.expiry.length < 5 || cardData.cvv.length < 3}
+                    className="w-full mt-2 py-4 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 active:scale-[0.98] transition-all text-white font-bold rounded-xl text-sm shadow-lg shadow-indigo-600/20 disabled:opacity-50 disabled:grayscale focus-ring flex items-center justify-center gap-2 group"
+                  >
+                    <span>Pay ₹{amountStr} Securely</span>
+                    <span className="group-hover:translate-x-1 transition-transform">→</span>
+                  </button>
+                </form>
+              </div>
+            )}
 
-                  <div className="absolute bottom-0 inset-x-0 pb-8 bg-slate-900/40">
-                    <button
-                      type="submit"
-                      disabled={cardData.number.length < 19 || !cardData.name || cardData.expiry.length < 5 || cardData.cvv.length < 3}
-                      className="w-full py-4 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 active:scale-[0.98] transition-all text-white font-bold rounded-xl text-sm shadow-lg shadow-indigo-600/20 disabled:opacity-50 disabled:grayscale focus-ring flex items-center justify-center gap-2 group"
-                    >
-                      <span>Pay ₹{amountStr} Securely</span>
-                      <span className="group-hover:translate-x-1 transition-transform">→</span>
-                    </button>
+            {/* 4. AUTOPAY (eNACH) */}
+            {activeTab === "autopay" && (
+              <div className="flex flex-col gap-4 animate-slide-left overflow-y-auto h-full pb-2">
+                <div className="bg-violet-600/10 border border-violet-500/30 rounded-xl p-3 flex gap-2.5 items-start">
+                  <span className="text-base mt-0.5">🔄</span>
+                  <div>
+                    <p className="text-xs font-bold text-violet-300 mb-0.5">AutoPay via eNACH</p>
+                    <p className="text-[11px] text-slate-400 leading-relaxed">Authorise a one-time mandate to auto-debit future payments. Your bank will send an approval link or OTP.</p>
                   </div>
+                </div>
+                <form onSubmit={handleAutoPaySubmit} className="space-y-3 flex-1 flex flex-col">
+                  <div className="space-y-3 flex-1">
+                    <div>
+                      <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1.5">Account Number</label>
+                      <input
+                        type="text"
+                        value={autopayData.accountNumber}
+                        onChange={e => setAutopayData({ ...autopayData, accountNumber: e.target.value.replace(/\D/g, '') })}
+                        placeholder="Enter bank account number"
+                        className="w-full bg-slate-950 border border-slate-800 focus:border-violet-500 rounded-xl px-4 py-3.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none transition-all font-mono focus-ring"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1.5">IFSC Code</label>
+                      <input
+                        type="text"
+                        value={autopayData.ifsc}
+                        onChange={e => setAutopayData({ ...autopayData, ifsc: e.target.value.toUpperCase() })}
+                        placeholder="e.g. SBIN0001234"
+                        maxLength={11}
+                        className="w-full bg-slate-950 border border-slate-800 focus:border-violet-500 rounded-xl px-4 py-3.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none transition-all font-mono focus-ring"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1.5">Account Holder Name</label>
+                      <input
+                        type="text"
+                        value={autopayData.accountName}
+                        onChange={e => setAutopayData({ ...autopayData, accountName: e.target.value })}
+                        placeholder="As per bank records"
+                        className="w-full bg-slate-950 border border-slate-800 focus:border-violet-500 rounded-xl px-4 py-3.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none transition-all focus-ring"
+                        required
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1.5">Bank Name</label>
+                        <input
+                          type="text"
+                          value={autopayData.bankName}
+                          onChange={e => setAutopayData({ ...autopayData, bankName: e.target.value })}
+                          placeholder="Bank name"
+                          className="w-full bg-slate-950 border border-slate-800 focus:border-violet-500 rounded-xl px-4 py-3.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none transition-all focus-ring"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1.5">Max Amount (₹)</label>
+                        <input
+                          type="number"
+                          value={autopayData.maxAmount}
+                          onChange={e => setAutopayData({ ...autopayData, maxAmount: e.target.value })}
+                          placeholder="e.g. 10000"
+                          min="1"
+                          className="w-full bg-slate-950 border border-slate-800 focus:border-violet-500 rounded-xl px-4 py-3.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none transition-all focus-ring"
+                          required
+                        />
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={!autopayData.accountNumber || !autopayData.ifsc || !autopayData.accountName}
+                    className="w-full mt-2 py-4 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 active:scale-[0.98] transition-all text-white font-bold rounded-xl text-sm shadow-lg shadow-indigo-600/20 disabled:opacity-50 disabled:grayscale focus-ring flex items-center justify-center gap-2 group"
+                  >
+                    <span>Authorise Mandate</span>
+                    <span className="group-hover:translate-x-1 transition-transform">→</span>
+                  </button>
                 </form>
               </div>
             )}
