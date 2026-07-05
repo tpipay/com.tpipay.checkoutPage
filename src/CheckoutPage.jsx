@@ -39,7 +39,7 @@ export default function CheckoutPage() {
   const [bankSearch, setBankSearch] = useState("");
   const bankDropdownRef = useRef(null);
 
-  const [netbankingData, setNetbankingData] = useState({ customerId: "", password: "" });
+  const [otherBankData, setOtherBankData] = useState({ bankName: "", ifsc: "" });
   const [cardData, setCardData] = useState({ number: "", name: "", expiry: "", cvv: "" });
   const [focusedField, setFocusedField] = useState("");
 
@@ -78,6 +78,7 @@ export default function CheckoutPage() {
     { code: "SCBL", name: "Standard Chartered Bank India" },
     { code: "HSBC", name: "HSBC India" },
     { code: "CITI", name: "Citi Bank India" },
+    { code: "OTHER", name: "Other" },
   ];
 
   // Fetch session details on mount
@@ -299,11 +300,16 @@ export default function CheckoutPage() {
   const handleNetbankingPay = (e) => {
     e.preventDefault();
     if (!selectedBank) return;
-    submitPayment({
+    const payload = {
       access_key: accessKey,
       payment_mode: "Netbanking",
       bank_code: selectedBank,
-    });
+    };
+    if (selectedBank === "OTHER") {
+      payload.bank_name = otherBankData.bankName;
+      payload.ifsc = otherBankData.ifsc;
+    }
+    submitPayment(payload);
   };
 
   // Payment trigger
@@ -786,27 +792,27 @@ export default function CheckoutPage() {
                   )}
                 </div>
 
-                {/* Bank Details for Payment */}
-                {selectedBank && (
+                {/* Bank Details for "Other" selection */}
+                {selectedBank === "OTHER" && (
                   <div className="space-y-3 animate-fade-in">
                     <div>
-                      <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1.5">Customer ID / User ID</label>
+                      <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1.5">Bank Name</label>
                       <input
                         type="text"
-                        value={netbankingData.customerId}
-                        onChange={e => setNetbankingData({ ...netbankingData, customerId: e.target.value })}
-                        placeholder="Enter your netbanking ID"
+                        value={otherBankData.bankName}
+                        onChange={e => setOtherBankData({ ...otherBankData, bankName: e.target.value })}
+                        placeholder="Enter your bank name"
                         className="w-full bg-slate-950 border border-slate-800 focus:border-violet-500 rounded-xl px-4 py-3.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none transition-all focus-ring"
                         required
                       />
                     </div>
                     <div>
-                      <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1.5">Password / IPIN</label>
+                      <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1.5">IFSC Code</label>
                       <input
-                        type="password"
-                        value={netbankingData.password}
-                        onChange={e => setNetbankingData({ ...netbankingData, password: e.target.value })}
-                        placeholder="Enter your password"
+                        type="text"
+                        value={otherBankData.ifsc}
+                        onChange={e => setOtherBankData({ ...otherBankData, ifsc: e.target.value })}
+                        placeholder="Enter your IFSC code"
                         className="w-full bg-slate-950 border border-slate-800 focus:border-violet-500 rounded-xl px-4 py-3.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none transition-all focus-ring"
                         required
                       />
@@ -816,7 +822,7 @@ export default function CheckoutPage() {
 
                 <button
                   type="submit"
-                  disabled={!selectedBank || !netbankingData.customerId || !netbankingData.password}
+                  disabled={!selectedBank || (selectedBank === "OTHER" && (!otherBankData.bankName || !otherBankData.ifsc))}
                   className="w-full mt-auto py-4 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 active:scale-[0.98] transition-all text-white font-bold rounded-xl text-sm shadow-lg shadow-indigo-600/20 disabled:opacity-50 disabled:grayscale focus-ring flex items-center justify-center gap-2 group"
                 >
                   <span>Pay ₹{amountStr} Securely</span>
