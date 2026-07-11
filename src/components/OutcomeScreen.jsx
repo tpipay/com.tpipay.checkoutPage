@@ -24,7 +24,7 @@ export default function OutcomeScreen({ status, statusMessage, session, paymentR
   const isPending = status === "pending";
   const isFailed = status === "failed";
 
-  const txnId = paymentResult?.transaction_id || session?.txnid || session?.paymentId || "—";
+  const txnId = paymentResult?.txnId || paymentResult?.transaction_id || session?.txnId || session?.txnid || session?.paymentId || "—";
   const amount = Number(session?.amount || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 });
   const methodLabel = paymentResult?.payment_method || activeTab?.toUpperCase() || "—";
   const now = paymentResult?.timestamp ? new Date(paymentResult.timestamp) : new Date();
