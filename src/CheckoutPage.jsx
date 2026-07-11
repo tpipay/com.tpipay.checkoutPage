@@ -289,10 +289,10 @@ export default function CheckoutPage() {
     }
     submitPayment({
       access_key: accessKey,
-      payment_mode: "Cards",
+      payment_mode: "CC",
       card_number: cleanCard,
       card_holder_name: cardData.name || "Customer",
-      card_expiry: cardData.expiry,
+      card_expiry_date: cardData.expiry,
       card_cvv: cardData.cvv,
     });
   };
@@ -302,7 +302,7 @@ export default function CheckoutPage() {
     if (!selectedBank) return;
     const payload = {
       access_key: accessKey,
-      payment_mode: "Netbanking",
+      payment_mode: "NB",
       bank_code: selectedBank,
     };
     if (selectedBank === "OTHER") {
@@ -319,10 +319,25 @@ export default function CheckoutPage() {
     try {
       const response = await processPayment(payload);
       setPaymentResult(response);
-      if (response?.status === "success") {
+
+      // Handle PayU S2S response types that require 3DS authentication
+      if (response?.type === "card_s2s" || response?.type === "nb_redirect") {
+        handleAcsTemplate(response);
+        return;
+      }
+
+      // Handle UPI QR response type
+      if (response?.type === "upi_qr" || response?.intentURIData) {
+        setStatus("pending");
+        setStatusMessage("Scan QR code with UPI app to pay");
+        startPolling();
+        return;
+      }
+
+      if (response?.status === "success" || response?.success === true) {
         setStatus("success");
         setStatusMessage(response.message || "Payment completed successfully!");
-      } else if (response?.status === "pending") {
+      } else if (response?.status === "pending" || response?.txnStatus === "Enrolled") {
         setStatus("pending");
         setStatusMessage(response.message || "Waiting for gateway confirmation...");
         startPolling();
@@ -335,6 +350,39 @@ export default function CheckoutPage() {
       setStatus("failed");
       setStatusMessage("Gateway response timeout. Check connection.");
       setPaymentResult({ reason: "NETWORK_ERROR" });
+    }
+  };
+
+  // Handle ACS template (3DS) for PayU card_s2s and nb_redirect responses
+  const handleAcsTemplate = (response) => {
+    if (response?.acsTemplate) {
+      try {
+        // Decode Base64 HTML template
+        const html = atob(response.acsTemplate);
+        // Create a form and submit to a new window/tab for 3DS authentication
+        const win = window.open("", "_blank");
+        if (win) {
+          win.document.write(html);
+          win.document.close();
+        }
+        setStatus("pending");
+        setStatusMessage("Redirecting to bank for 3D Secure authentication...");
+      } catch (e) {
+        console.error("Failed to decode ACS template:", e);
+        setStatus("pending");
+        setStatusMessage("Waiting for OTP verification...");
+        startPolling();
+      }
+    } else {
+      // No ACS template means payment may be complete already
+      if (response?.txnStatus === "success" || response?.unmappedStatus === "success") {
+        setStatus("success");
+        setStatusMessage("Payment completed successfully!");
+      } else {
+        setStatus("pending");
+        setStatusMessage("Waiting for gateway confirmation...");
+        startPolling();
+      }
     }
   };
 
