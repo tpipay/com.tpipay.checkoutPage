@@ -334,6 +334,12 @@ export default function CheckoutPage() {
         return;
       }
 
+      // Handle form-based redirect response (action + fields to POST to PayU)
+      if (response?.action && response?.fields) {
+        submitPayUForm(response);
+        return;
+      }
+
       if (response?.status === "success" || response?.success === true) {
         setStatus("success");
         setStatusMessage(response.message || "Payment completed successfully!");
@@ -384,6 +390,30 @@ export default function CheckoutPage() {
         startPolling();
       }
     }
+  };
+
+  // Handle form-based redirect: build a hidden HTML form and auto-submit to PayU
+  const submitPayUForm = (response) => {
+    const form = document.createElement("form");
+    form.method = response.method || "POST";
+    form.action = response.action;
+    form.target = "_blank";
+    form.style.display = "none";
+    if (response.fields) {
+      Object.entries(response.fields).forEach(([key, value]) => {
+        const input = document.createElement("input");
+        input.type = "hidden";
+        input.name = key;
+        input.value = value;
+        form.appendChild(input);
+      });
+    }
+    document.body.appendChild(form);
+    form.submit();
+    document.body.removeChild(form);
+    setStatus("pending");
+    setStatusMessage("Redirecting to PayU payment page...");
+    startPolling();
   };
 
   const filteredBanks = allBanks.filter((bank) =>
