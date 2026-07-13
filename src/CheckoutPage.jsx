@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useParams } from "react-router-dom";
 import { fetchSession, processPayment, verifyUpiId, generateQrCode, pollPaymentStatus } from "./services/paymentService";
 import SessionTimer from "./components/SessionTimer";
@@ -22,6 +22,13 @@ export default function CheckoutPage() {
   // Payment form states
   const [upiId, setUpiId] = useState("");
   const [upiVerification, setUpiVerification] = useState({ state: "idle", name: null, error: null }); // idle | loading | success | error
+
+  const deviceOs = useMemo(() => {
+    const ua = navigator.userAgent.toLowerCase();
+    if (/android/.test(ua)) return "ANDROID";
+    if (/iphone|ipad|ipod/.test(ua)) return "IOS";
+    return "WEB";
+  }, []);
 
   const [showQr, setShowQr] = useState(false);
   const [qrData, setQrData] = useState(null);
@@ -182,6 +189,14 @@ export default function CheckoutPage() {
     }
   };
 
+  const handleUpiIntentPay = () => {
+    submitPayment({
+      access_key: accessKey,
+      payment_mode: "UPI",
+      device_os: deviceOs,
+    });
+  };
+
   const handleUpiPay = async (e) => {
     e.preventDefault();
     if (!upiId) return;
@@ -319,6 +334,7 @@ export default function CheckoutPage() {
     try {
       const response = await processPayment(payload);
       setPaymentResult(response);
+<<<<<<< HEAD
 
       // Handle PayU S2S response types that require 3DS authentication
       if (response?.type === "card_s2s" || response?.type === "nb_redirect") {
@@ -341,6 +357,16 @@ export default function CheckoutPage() {
       }
 
       if (response?.status === "success" || response?.success === true) {
+=======
+      if (response?.intentUrl) {
+        setStatus("pending");
+        setStatusMessage(response.message || "Opening UPI app...");
+        startPolling();
+        window.location.href = response.intentUrl;
+        return;
+      }
+      if (response?.status === "success") {
+>>>>>>> 4733459 (init push)
         setStatus("success");
         setStatusMessage(response.message || "Payment completed successfully!");
       } else if (response?.status === "pending" || response?.txnStatus === "Enrolled") {
@@ -618,6 +644,31 @@ export default function CheckoutPage() {
               <div className="flex flex-col gap-4 animate-slide-left overflow-y-auto h-full pb-2">
                 {!showQr ? (
                   <>
+                    {/* UPI Intent section */}
+                    <div>
+                      <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">
+                        Pay via UPI Intent
+                      </label>
+                      <p className="text-xs text-slate-400 mb-3 leading-relaxed">
+                        You will be redirected to your UPI app to complete the payment securely.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handleUpiIntentPay}
+                        disabled={status === "processing" || status === "pending"}
+                        className="w-full py-4 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 active:scale-[0.98] transition-all text-white font-bold rounded-xl text-sm shadow-lg shadow-indigo-600/20 disabled:opacity-50 disabled:active:scale-100 flex items-center justify-center gap-2 group focus-ring"
+                      >
+                        <span>Pay ₹{amountStr} Securely</span>
+                        <span className="group-hover:translate-x-1 transition-transform">→</span>
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-4 my-2 opacity-70">
+                      <div className="h-[1px] bg-slate-700 flex-1"></div>
+                      <span className="text-[10px] uppercase font-black tracking-widest text-slate-500">Or Pay Using UPI ID</span>
+                      <div className="h-[1px] bg-slate-700 flex-1"></div>
+                    </div>
+
                     <form onSubmit={handleUpiPay} className="space-y-5">
                       <div>
                         <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">
