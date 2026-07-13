@@ -334,7 +334,6 @@ export default function CheckoutPage() {
     try {
       const response = await processPayment(payload);
       setPaymentResult(response);
-<<<<<<< HEAD
 
       // Handle PayU S2S response types that require 3DS authentication
       if (response?.type === "card_s2s" || response?.type === "nb_redirect") {
@@ -356,8 +355,7 @@ export default function CheckoutPage() {
         return;
       }
 
-      if (response?.status === "success" || response?.success === true) {
-=======
+      // Handle UPI Intent deep link
       if (response?.intentUrl) {
         setStatus("pending");
         setStatusMessage(response.message || "Opening UPI app...");
@@ -365,8 +363,8 @@ export default function CheckoutPage() {
         window.location.href = response.intentUrl;
         return;
       }
-      if (response?.status === "success") {
->>>>>>> 4733459 (init push)
+
+      if (response?.status === "success" || response?.success === true) {
         setStatus("success");
         setStatusMessage(response.message || "Payment completed successfully!");
       } else if (response?.status === "pending" || response?.txnStatus === "Enrolled") {
