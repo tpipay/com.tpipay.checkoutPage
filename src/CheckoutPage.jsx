@@ -466,7 +466,7 @@ export default function CheckoutPage() {
     );
   }
 
-  if (status !== "idle" && status !== "processing") {
+  if (status !== "idle" && status !== "processing" && !intentUrl) {
     return (
       <OutcomeScreen
         status={status}
