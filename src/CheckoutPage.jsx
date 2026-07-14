@@ -51,6 +51,7 @@ export default function CheckoutPage() {
   const [focusedField, setFocusedField] = useState("");
 
   const pollingInterval = useRef(null);
+  const [intentUrl, setIntentUrl] = useState(null);
 
   // Popular banks lists
   const popularBanks = [
@@ -360,7 +361,7 @@ export default function CheckoutPage() {
         setStatus("pending");
         setStatusMessage(response.message || "Opening UPI app...");
         startPolling();
-        window.location.href = response.intentUrl;
+        setIntentUrl(response.intentUrl);
         return;
       }
 
@@ -493,6 +494,59 @@ export default function CheckoutPage() {
             <p className="text-sm text-slate-400 leading-relaxed">
               Securely authorizing transaction. Please do not close this window or hit refresh.
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* UPI INTENT URL MODAL */}
+      {intentUrl && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl w-full max-w-lg animate-fade-in-scale overflow-hidden">
+            <div className="p-6 md:p-8">
+              <h3 className="text-xl font-bold text-white mb-2">UPI Intent URL</h3>
+              <p className="text-sm text-slate-400 mb-4 leading-relaxed">
+                The backend has generated the following UPI Intent URL.
+              </p>
+              <textarea
+                readOnly
+                value={intentUrl}
+                rows={4}
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-sm text-slate-200 placeholder-slate-600 focus:outline-none resize-none scrollbar-thin"
+              />
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mt-5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(intentUrl).then(() => {
+                      const btn = document.getElementById("copy-intent-btn");
+                      if (btn) {
+                        const orig = btn.textContent;
+                        btn.textContent = "Copied successfully";
+                        setTimeout(() => { btn.textContent = orig; }, 2000);
+                      }
+                    });
+                  }}
+                  id="copy-intent-btn"
+                  className="flex-1 py-3 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 active:scale-[0.98] transition-all text-white font-bold rounded-xl text-sm shadow-lg shadow-indigo-600/20 focus-ring"
+                >
+                  Copy
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { window.location.href = intentUrl; }}
+                  className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 active:scale-[0.98] transition-all text-white font-bold rounded-xl text-sm border border-slate-700 focus-ring"
+                >
+                  Launch UPI App
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIntentUrl(null)}
+                  className="flex-1 py-3 bg-slate-800/50 hover:bg-slate-800 active:scale-[0.98] transition-all text-slate-300 font-bold rounded-xl text-sm border border-slate-700/50 focus-ring"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
