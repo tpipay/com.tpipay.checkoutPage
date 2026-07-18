@@ -51,6 +51,7 @@ export default function CheckoutPage() {
   const [focusedField, setFocusedField] = useState("");
 
   const pollingInterval = useRef(null);
+  const pollCountRef = useRef(0);
   const [intentUrl, setIntentUrl] = useState(null);
 
   // Popular banks lists
@@ -105,6 +106,36 @@ export default function CheckoutPage() {
           if (response.data.sessionExpiresAt && Date.now() >= response.data.sessionExpiresAt) {
             setSessionExpired(true);
           }
+
+          const params = new URLSearchParams(window.location.search);
+          const redirectStatus = params.get("status");
+          if (redirectStatus === "pending" || redirectStatus === "PENDING") {
+            window.history.replaceState({}, "", window.location.pathname);
+            startPolling();
+            setStatus("pending");
+            setStatusMessage("Verification in progress. Please wait...");
+          } else {
+            try {
+              const statusResult = await pollPaymentStatus(accessKey);
+              if (statusResult.status === "PENDING") {
+                startPolling();
+                setStatus("pending");
+                setStatusMessage("Verification in progress. Please wait...");
+              } else if (statusResult.status === "SUCCESS") {
+                clearInterval(pollingInterval.current);
+                setStatus("success");
+                setStatusMessage("Payment received successfully!");
+                setPaymentResult(statusResult);
+              } else if (statusResult.status === "FAILED" || statusResult.status === "EXPIRED" || statusResult.status === "CANCELLED") {
+                clearInterval(pollingInterval.current);
+                setStatus("failed");
+                setStatusMessage(statusResult.message || "Payment failed");
+                setPaymentResult(statusResult);
+              }
+            } catch (e) {
+              // No existing payment or API unavailable — show checkout form
+            }
+          }
         } else {
           setStatus("failed");
           setStatusMessage("Failed to load secure session. Invalid access key.");
@@ -120,7 +151,7 @@ export default function CheckoutPage() {
     if (accessKey) {
       loadSession();
     }
-  }, [accessKey]);
+  }, [accessKey, startPolling]);
 
   // Cleanup polling and QR timer on unmount
   useEffect(() => {
@@ -158,7 +189,16 @@ export default function CheckoutPage() {
 
   const startPolling = useCallback(() => {
     if (pollingInterval.current) clearInterval(pollingInterval.current);
+    pollCountRef.current = 0;
     pollingInterval.current = setInterval(async () => {
+      pollCountRef.current += 1;
+      if (pollCountRef.current > 300) {
+        clearInterval(pollingInterval.current);
+        setStatus("failed");
+        setStatusMessage("Payment verification timed out. Please check your payment status.");
+        setPaymentResult({ reason: "PAYMENT_TIMEOUT" });
+        return;
+      }
       try {
         const result = await pollPaymentStatus(accessKey);
         if (result.status === "SUCCESS") {
@@ -170,6 +210,11 @@ export default function CheckoutPage() {
           clearInterval(pollingInterval.current);
           setStatus("failed");
           setStatusMessage(result.message || "Payment failed");
+          setPaymentResult(result);
+        } else if (result.status === "EXPIRED" || result.status === "CANCELLED") {
+          clearInterval(pollingInterval.current);
+          setStatus("failed");
+          setStatusMessage(result.message || (result.status === "EXPIRED" ? "Payment expired" : "Payment cancelled"));
           setPaymentResult(result);
         }
       } catch (e) {
@@ -398,6 +443,7 @@ export default function CheckoutPage() {
         }
         setStatus("pending");
         setStatusMessage("Redirecting to bank for 3D Secure authentication...");
+        startPolling();
       } catch (e) {
         console.error("Failed to decode ACS template:", e);
         setStatus("pending");
@@ -475,9 +521,25 @@ export default function CheckoutPage() {
         paymentResult={paymentResult}
         activeTab={activeTab}
         onRetry={() => {
-          setStatus("idle");
-          setPaymentResult(null);
-          if (pollingInterval.current) clearInterval(pollingInterval.current);
+          if (status === "pending") {
+            pollPaymentStatus(accessKey).then(result => {
+              if (result.status === "SUCCESS") {
+                clearInterval(pollingInterval.current);
+                setStatus("success");
+                setStatusMessage("Payment received successfully!");
+                setPaymentResult(result);
+              } else if (result.status === "FAILED" || result.status === "EXPIRED" || result.status === "CANCELLED") {
+                clearInterval(pollingInterval.current);
+                setStatus("failed");
+                setStatusMessage(result.message || "Payment failed");
+                setPaymentResult(result);
+              }
+            }).catch(() => {});
+          } else {
+            setStatus("idle");
+            setPaymentResult(null);
+            if (pollingInterval.current) clearInterval(pollingInterval.current);
+          }
         }}
       />
     );
