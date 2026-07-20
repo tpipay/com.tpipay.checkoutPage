@@ -356,6 +356,15 @@ export default function CheckoutPage() {
         return;
       }
 
+      // Handle redirect URL (e.g. card 3DS, bank page) - open in new tab
+      if (response?.redirectUrl) {
+        setStatus("pending");
+        setStatusMessage("Redirecting to payment page...");
+        startPolling();
+        window.open(response.redirectUrl, "_blank");
+        return;
+      }
+
       // Handle UPI Intent deep link
       if (response?.intentUrl) {
         setStatus("pending");
