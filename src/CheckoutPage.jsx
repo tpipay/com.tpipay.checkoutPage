@@ -727,117 +727,85 @@ export default function CheckoutPage() {
               <div className="flex flex-col gap-4 animate-slide-left overflow-y-auto h-full pb-2">
                 {!showQr ? (
                   <>
-                    {/* UPI Intent section */}
-                    {deviceOs !== "WEB" && (
-                      <>
-                        <div>
-                          <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">
-                            Pay via UPI Intent
-                          </label>
-                          <p className="text-xs text-slate-400 mb-3 leading-relaxed">
-                            You will be redirected to your UPI app to complete the payment securely.
-                          </p>
-                          <button
-                            type="button"
-                            onClick={handleUpiIntentPay}
-                            disabled={status === "processing" || status === "pending"}
-                            className="w-full py-4 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 active:scale-[0.98] transition-all text-white font-bold rounded-xl text-sm shadow-lg shadow-indigo-600/20 disabled:opacity-50 disabled:active:scale-100 flex items-center justify-center gap-2 group focus-ring"
-                          >
-                            <span>Pay ₹{amountStr} Securely</span>
-                            <span className="group-hover:translate-x-1 transition-transform">→</span>
-                          </button>
-                        </div>
-    
-                        <div className="flex items-center gap-4 my-2 opacity-70">
-                          <div className="h-[1px] bg-slate-700 flex-1"></div>
-                          <span className="text-[10px] uppercase font-black tracking-widest text-slate-500">Or Pay Using UPI ID</span>
-                          <div className="h-[1px] bg-slate-700 flex-1"></div>
-                        </div>
-                      </>
-                    )}
-
-                    <form onSubmit={handleUpiPay} className="space-y-5">
+                    {/* Mobile (Android): Pay Now button */}
+                    {deviceOs === "ANDROID" && (
                       <div>
                         <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">
-                          Enter UPI ID / VPA
+                          Pay via UPI
                         </label>
-                        <div className="relative group">
-                          <input
-                            type="text"
-                            value={upiId}
-                            onChange={(e) => {
-                              setUpiId(e.target.value);
-                              setUpiVerification({ state: "idle", name: null, error: null });
-                            }}
-                            placeholder="username@bank"
-                            className={`w-full bg-slate-950 border ${upiVerification.state === 'error' ? 'border-rose-500/50 focus:border-rose-500' : upiVerification.state === 'success' ? 'border-emerald-500/50 focus:border-emerald-500' : 'border-slate-800 focus:border-violet-500'} rounded-xl px-4 py-3.5 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus-ring transition-all pr-24`}
-                            required
-                          />
-                          <button
-                            type="button"
-                            onClick={handleUpiVerify}
-                            disabled={!upiId || upiVerification.state === 'loading'}
-                            className={`absolute right-2 top-2 bottom-2 px-4 text-[10px] font-bold uppercase rounded-lg transition-all ${upiVerification.state === "success"
-                              ? "bg-emerald-500/10 text-emerald-400"
-                              : upiVerification.state === "error"
-                                ? "bg-rose-500/10 text-rose-400"
-                                : "bg-slate-800 text-slate-300 hover:bg-slate-700"
-                              } disabled:opacity-50`}
-                          >
-                            {upiVerification.state === 'loading' ? (
-                              <div className="w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin"></div>
-                            ) : upiVerification.state === 'success' ? (
-                              "Verified ✓"
-                            ) : "Verify"}
-                          </button>
-                        </div>
-
-                        {/* Validation Result area */}
-                        <div className="h-6 mt-1.5 flex items-center">
-                          {upiVerification.state === "success" && (
-                            <span className="text-[11px] text-emerald-400 font-medium flex items-center gap-1.5 animate-fade-in">
-                              <span className="w-1 h-1 rounded-full bg-emerald-400"></span>
-                              Verified Account Holder: {upiVerification.name}
-                            </span>
-                          )}
-                          {upiVerification.state === "error" && (
-                            <span className="text-[11px] text-rose-400 font-medium flex items-center gap-1.5 animate-fade-in">
-                              <span className="w-1 h-1 rounded-full bg-rose-400"></span>
-                              {upiVerification.error}
-                            </span>
-                          )}
-                        </div>
+                        <p className="text-xs text-slate-400 mb-3 leading-relaxed">
+                          Tap below to open your UPI app and complete the payment securely.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={handleUpiIntentPay}
+                          disabled={status === "processing" || status === "pending"}
+                          className="w-full py-4 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 active:scale-[0.98] transition-all text-white font-bold rounded-xl text-sm shadow-lg shadow-indigo-600/20 disabled:opacity-50 disabled:active:scale-100 flex items-center justify-center gap-2 group focus-ring"
+                        >
+                          <span>Pay ₹{amountStr} Securely</span>
+                          <span className="group-hover:translate-x-1 transition-transform">→</span>
+                        </button>
                       </div>
+                    )}
 
+                    {/* iOS: Pay Now button only (no QR, no Copy) */}
+                    {deviceOs === "IOS" && (
+                      <div>
+                        <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">
+                          Pay via UPI
+                        </label>
+                        <p className="text-xs text-slate-400 mb-3 leading-relaxed">
+                          Tap below to open your UPI app and complete the payment securely.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={handleUpiIntentPay}
+                          disabled={status === "processing" || status === "pending"}
+                          className="w-full py-4 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 active:scale-[0.98] transition-all text-white font-bold rounded-xl text-sm shadow-lg shadow-indigo-600/20 disabled:opacity-50 disabled:active:scale-100 flex items-center justify-center gap-2 group focus-ring"
+                        >
+                          <span>Pay ₹{amountStr} Securely</span>
+                          <span className="group-hover:translate-x-1 transition-transform">→</span>
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Desktop: QR label (auto-generated by useEffect) */}
+                    {deviceOs === "WEB" && (
+                      <div>
+                        <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">
+                          Pay via UPI QR
+                        </label>
+                        <p className="text-xs text-slate-400 mb-3 leading-relaxed">
+                          Scan the QR code with any UPI app — PhonePe, GPay, or Paytm — to complete the payment.
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Android: "Or" divider before QR */}
+                    {deviceOs === "ANDROID" && (
+                      <div className="flex items-center gap-4 my-1 opacity-70">
+                        <div className="h-[1px] bg-slate-700 flex-1"></div>
+                        <span className="text-[10px] uppercase font-black tracking-widest text-slate-500">Or Pay Via QR</span>
+                        <div className="h-[1px] bg-slate-700 flex-1"></div>
+                      </div>
+                    )}
+
+                    {/* Generate QR button — Desktop & Android only. iOS excluded. */}
+                    {deviceOs !== "IOS" && (
                       <button
-                        type="submit"
-                        disabled={!upiId}
-                        className="w-full py-4 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 active:scale-[0.98] transition-all text-white font-bold rounded-xl text-sm shadow-lg shadow-indigo-600/20 disabled:opacity-50 disabled:active:scale-100 flex items-center justify-center gap-2 group focus-ring"
+                        type="button"
+                        onClick={handleGenerateQr}
+                        disabled={qrLoading}
+                        className="w-full py-4 bg-slate-950/80 hover:bg-slate-900 border border-slate-700 hover:border-violet-500/50 transition-all text-white font-bold rounded-xl text-sm flex items-center justify-center gap-3 focus-ring"
                       >
-                        <span>Pay ₹{amountStr} Securely</span>
-                        <span className="group-hover:translate-x-1 transition-transform">→</span>
+                        {qrLoading ? (
+                          <div className="w-5 h-5 border-2 border-violet-500 border-t-transparent rounded-full animate-spin"></div>
+                        ) : (
+                          <span className="text-xl">📷</span>
+                        )}
+                        Generate QR Code
                       </button>
-                    </form>
-
-                    <div className="flex items-center gap-4 my-6 opacity-70">
-                      <div className="h-[1px] bg-slate-700 flex-1"></div>
-                      <span className="text-[10px] uppercase font-black tracking-widest text-slate-500">Or Pay Via QR</span>
-                      <div className="h-[1px] bg-slate-700 flex-1"></div>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={handleGenerateQr}
-                      disabled={qrLoading}
-                      className="w-full py-4 bg-slate-950/80 hover:bg-slate-900 border border-slate-700 hover:border-violet-500/50 transition-all text-white font-bold rounded-xl text-sm flex items-center justify-center gap-3 focus-ring"
-                    >
-                      {qrLoading ? (
-                        <div className="w-5 h-5 border-2 border-violet-500 border-t-transparent rounded-full animate-spin"></div>
-                      ) : (
-                        <span className="text-xl">📷</span>
-                      )}
-                      Generate QR Code
-                    </button>
+                    )}
                   </>
                 ) : (
                   <div className="flex flex-col items-center animate-fade-in-scale overflow-y-auto pb-2">
