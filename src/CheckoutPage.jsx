@@ -150,6 +150,7 @@ export default function CheckoutPage() {
   }, [showQr]);
 
   const handleSessionExpire = useCallback(() => {
+    if (pollingInterval.current) clearInterval(pollingInterval.current);
     setSessionExpired(true);
     setStatus("failed");
     setStatusMessage("Payment session expired. Please return to merchant and try again.");
@@ -170,6 +171,16 @@ export default function CheckoutPage() {
           clearInterval(pollingInterval.current);
           setStatus("failed");
           setStatusMessage(result.message || "Payment failed");
+          setPaymentResult(result);
+        } else if (result.status === "CANCELLED") {
+          clearInterval(pollingInterval.current);
+          setStatus("failed");
+          setStatusMessage(result.message || "Payment was cancelled by the user");
+          setPaymentResult(result);
+        } else if (result.status === "EXPIRED") {
+          clearInterval(pollingInterval.current);
+          setStatus("failed");
+          setStatusMessage(result.message || "Payment session expired");
           setPaymentResult(result);
         }
       } catch (e) {
