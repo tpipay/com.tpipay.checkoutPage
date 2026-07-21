@@ -36,6 +36,7 @@ export default function CheckoutPage() {
   const [qrError, setQrError] = useState(null);
   const [qrTimerSeconds, setQrTimerSeconds] = useState(900);
   const [qrExpired, setQrExpired] = useState(false);
+  const [autoQrGenerated, setAutoQrGenerated] = useState(false);
 
   const [autopayData, setAutopayData] = useState({ accountNumber: "", ifsc: "", accountName: "", bankName: "", maxAmount: "" });
 
@@ -148,6 +149,14 @@ export default function CheckoutPage() {
     }, 1000);
     return () => clearInterval(qrTimerRef.current);
   }, [showQr]);
+
+  // Auto-generate QR on desktop
+  useEffect(() => {
+    if (activeTab === "upi" && deviceOs === "WEB" && !showQr && !qrLoading && !autoQrGenerated && session) {
+      setAutoQrGenerated(true);
+      handleGenerateQr();
+    }
+  }, [activeTab, deviceOs, showQr, qrLoading, autoQrGenerated, session]);
 
   const handleSessionExpire = useCallback(() => {
     if (pollingInterval.current) clearInterval(pollingInterval.current);
@@ -534,23 +543,25 @@ export default function CheckoutPage() {
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-sm text-slate-200 placeholder-slate-600 focus:outline-none resize-none scrollbar-thin"
               />
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mt-5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    navigator.clipboard.writeText(intentUrl).then(() => {
-                      const btn = document.getElementById("copy-intent-btn");
-                      if (btn) {
-                        const orig = btn.textContent;
-                        btn.textContent = "Copied successfully";
-                        setTimeout(() => { btn.textContent = orig; }, 2000);
-                      }
-                    });
-                  }}
-                  id="copy-intent-btn"
-                  className="flex-1 py-3 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 active:scale-[0.98] transition-all text-white font-bold rounded-xl text-sm shadow-lg shadow-indigo-600/20 focus-ring"
-                >
-                  Copy
-                </button>
+                {deviceOs !== "IOS" && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(intentUrl).then(() => {
+                        const btn = document.getElementById("copy-intent-btn");
+                        if (btn) {
+                          const orig = btn.textContent;
+                          btn.textContent = "Copied successfully";
+                          setTimeout(() => { btn.textContent = orig; }, 2000);
+                        }
+                      });
+                    }}
+                    id="copy-intent-btn"
+                    className="flex-1 py-3 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 active:scale-[0.98] transition-all text-white font-bold rounded-xl text-sm shadow-lg shadow-indigo-600/20 focus-ring"
+                  >
+                    Copy
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => { window.location.href = intentUrl; }}
@@ -717,29 +728,33 @@ export default function CheckoutPage() {
                 {!showQr ? (
                   <>
                     {/* UPI Intent section */}
-                    <div>
-                      <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">
-                        Pay via UPI Intent
-                      </label>
-                      <p className="text-xs text-slate-400 mb-3 leading-relaxed">
-                        You will be redirected to your UPI app to complete the payment securely.
-                      </p>
-                      <button
-                        type="button"
-                        onClick={handleUpiIntentPay}
-                        disabled={status === "processing" || status === "pending"}
-                        className="w-full py-4 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 active:scale-[0.98] transition-all text-white font-bold rounded-xl text-sm shadow-lg shadow-indigo-600/20 disabled:opacity-50 disabled:active:scale-100 flex items-center justify-center gap-2 group focus-ring"
-                      >
-                        <span>Pay ₹{amountStr} Securely</span>
-                        <span className="group-hover:translate-x-1 transition-transform">→</span>
-                      </button>
-                    </div>
-
-                    <div className="flex items-center gap-4 my-2 opacity-70">
-                      <div className="h-[1px] bg-slate-700 flex-1"></div>
-                      <span className="text-[10px] uppercase font-black tracking-widest text-slate-500">Or Pay Using UPI ID</span>
-                      <div className="h-[1px] bg-slate-700 flex-1"></div>
-                    </div>
+                    {deviceOs !== "WEB" && (
+                      <>
+                        <div>
+                          <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">
+                            Pay via UPI Intent
+                          </label>
+                          <p className="text-xs text-slate-400 mb-3 leading-relaxed">
+                            You will be redirected to your UPI app to complete the payment securely.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={handleUpiIntentPay}
+                            disabled={status === "processing" || status === "pending"}
+                            className="w-full py-4 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 active:scale-[0.98] transition-all text-white font-bold rounded-xl text-sm shadow-lg shadow-indigo-600/20 disabled:opacity-50 disabled:active:scale-100 flex items-center justify-center gap-2 group focus-ring"
+                          >
+                            <span>Pay ₹{amountStr} Securely</span>
+                            <span className="group-hover:translate-x-1 transition-transform">→</span>
+                          </button>
+                        </div>
+    
+                        <div className="flex items-center gap-4 my-2 opacity-70">
+                          <div className="h-[1px] bg-slate-700 flex-1"></div>
+                          <span className="text-[10px] uppercase font-black tracking-widest text-slate-500">Or Pay Using UPI ID</span>
+                          <div className="h-[1px] bg-slate-700 flex-1"></div>
+                        </div>
+                      </>
+                    )}
 
                     <form onSubmit={handleUpiPay} className="space-y-5">
                       <div>
@@ -841,26 +856,17 @@ export default function CheckoutPage() {
                     {/* QR Code box */}
                     <div className="relative">
                       <div className={`bg-white p-4 rounded-2xl shadow-2xl shadow-black/50 border-4 border-slate-800 relative transition-all duration-300 ${qrExpired ? "opacity-30 grayscale" : "group hover:scale-105"}`}>
-                        <div className="w-44 h-44 bg-white relative">
-                          {/* QR pattern */}
-                          <div className="absolute inset-0 grid grid-cols-7 gap-[2px] p-1">
-                            {[1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1].map((v, i) => (
-                              <div key={`tl-${i}`} className={`rounded-[1px] ${v ? "bg-slate-900" : "bg-transparent"}`} />
-                            ))}
-                          </div>
-                          <div className="absolute inset-0 grid grid-cols-7 gap-[2px] p-1" style={{ left: "auto", right: 0, width: "calc(100%*7/14)" }}>
-                            {[1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1].map((v, i) => (
-                              <div key={`tr-${i}`} className={`rounded-[1px] ${v ? "bg-slate-900" : "bg-transparent"}`} />
-                            ))}
-                          </div>
-                          {/* Centre data dots */}
-                          <div className="absolute inset-0 flex items-center justify-center">
-                            <div className="grid grid-cols-5 gap-[3px]">
-                              {Array.from({ length: 25 }).map((_, i) => (
-                                <div key={i} className={`w-2 h-2 rounded-[1px] ${[0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24].includes(i) ? "bg-slate-900" : "bg-slate-900/20"}`} />
-                              ))}
+                        <div className="w-44 h-44 bg-white relative p-2 flex items-center justify-center rounded-xl">
+                          {qrData?.qrImage ? (
+                            <img src={qrData.qrImage.startsWith('http') || qrData.qrImage.startsWith('data:') ? qrData.qrImage : `data:image/png;base64,${qrData.qrImage}`} alt="UPI QR Code" className="w-full h-full object-contain" />
+                          ) : qrData?.qrData ? (
+                            <div className="text-center text-[10px] text-slate-600 break-all p-2 bg-slate-100 rounded-lg w-full h-full flex flex-col items-center justify-center">
+                              <span className="font-bold block mb-1">Intent URL:</span>
+                              {qrData.qrData}
                             </div>
-                          </div>
+                          ) : (
+                            <div className="text-slate-400 text-xs font-bold">QR Image Unavailable</div>
+                          )}
                         </div>
                         {!qrExpired && <div className="absolute inset-x-4 top-4 h-0.5 bg-violet-500/60 blur-[1.5px] rounded-full animate-[float_2s_ease-in-out_infinite]" />}
                       </div>
