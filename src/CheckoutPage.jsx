@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useParams } from "react-router-dom";
 import { fetchSession, processPayment, verifyUpiId, generateQrCode, pollPaymentStatus } from "./services/paymentService";
+import QRCode from "react-qr-code";
 import SessionTimer from "./components/SessionTimer";
 import OutcomeScreen from "./components/OutcomeScreen";
 import gpayImg from "./gpay.png";
@@ -828,10 +829,12 @@ export default function CheckoutPage() {
                           {qrData?.qrImage ? (
                             <img src={qrData.qrImage.startsWith('http') || qrData.qrImage.startsWith('data:') ? qrData.qrImage : `data:image/png;base64,${qrData.qrImage}`} alt="UPI QR Code" className="w-full h-full object-contain" />
                           ) : qrData?.qrData ? (
-                            <div className="text-center text-[10px] text-slate-600 break-all p-2 bg-slate-100 rounded-lg w-full h-full flex flex-col items-center justify-center">
-                              <span className="font-bold block mb-1">Intent URL:</span>
-                              {qrData.qrData}
-                            </div>
+                            <QRCode
+                              value={qrData.qrData}
+                              size={160}
+                              style={{ height: "auto", maxWidth: "100%", width: "100%" }}
+                              viewBox={`0 0 160 160`}
+                            />
                           ) : (
                             <div className="text-slate-400 text-xs font-bold">QR Image Unavailable</div>
                           )}
