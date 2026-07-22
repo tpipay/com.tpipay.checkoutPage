@@ -152,7 +152,8 @@ export async function generateQrCode(accessKey, sessionData) {
     return {
       qrData: finalQrData,
       qrImage: null,
-      expiresAt: Date.now() + (expirySeconds * 1000)
+      expiresAt: Date.now() + (expirySeconds * 1000),
+      expireAfter: expirySeconds
     };
   } catch (error) {
     console.error("QR generation error:", error);
@@ -161,7 +162,8 @@ export async function generateQrCode(accessKey, sessionData) {
     return {
       qrData,
       qrImage: null,
-      expiresAt: sessionData?.sessionExpiresAt || (Date.now() + 15 * 60 * 1000)
+      expiresAt: sessionData?.sessionExpiresAt || (Date.now() + 15 * 60 * 1000),
+      expireAfter: 900
     };
   }
 }

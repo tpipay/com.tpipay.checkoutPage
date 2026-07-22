@@ -178,6 +178,9 @@ export default function CheckoutPage() {
           setStatusMessage("Payment received successfully!");
           setPaymentResult(result);
         } else if (result.status === "FAILED") {
+          if (result.message && result.message.toLowerCase().includes("bad request")) {
+            return;
+          }
           clearInterval(pollingInterval.current);
           setStatus("failed");
           setStatusMessage(result.message || "Payment failed");
@@ -245,12 +248,16 @@ export default function CheckoutPage() {
     try {
       const result = await generateQrCode(accessKey, session);
       setQrData(result);
+      if (result.expireAfter) {
+        setQrTimerSeconds(result.expireAfter);
+      }
       setShowQr(true);
       startPolling();
     } catch (e) {
       // Even on error, show the QR screen with a fallback UPI deep link
       const fallbackQr = `upi://pay?pa=tpipay@gateway&pn=TPIPAY&am=${session?.amount}&cu=INR`;
-      setQrData({ qrData: fallbackQr, qrImage: null, expiresAt: Date.now() + 15 * 60 * 1000 });
+      setQrData({ qrData: fallbackQr, qrImage: null, expiresAt: Date.now() + 15 * 60 * 1000, expireAfter: 900 });
+      setQrTimerSeconds(900);
       setShowQr(true);
       startPolling();
     } finally {
@@ -391,7 +398,11 @@ export default function CheckoutPage() {
         setStatus("pending");
         setStatusMessage(response.message || "Opening UPI app...");
         startPolling();
-        setIntentUrl(response.intentUrl);
+        if (deviceOs === "WEB") {
+          setIntentUrl(response.intentUrl);
+        } else {
+          window.location.href = response.intentUrl;
+        }
         return;
       }
 
