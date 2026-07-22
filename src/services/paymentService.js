@@ -112,13 +112,19 @@ export async function verifyUpiId(upiId, accessKey) {
  */
 export async function generateQrCode(accessKey, sessionData) {
   try {
-    const response = await fetch(`${API_BASE_URL}/api/payment/qr/generate`, {
+    const payload = {
+      access_key: accessKey,
+      payment_mode: "UPI_QR",
+      device_os: "WEB"
+    };
+    
+    const response = await fetch(`${API_BASE_URL}/api/payment/pay`, {
       method: "POST",
       headers: {
         "Accept": "application/json",
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({ access_key: accessKey })
+      body: JSON.stringify(payload)
     });
 
     if (!response.ok) {
@@ -126,10 +132,26 @@ export async function generateQrCode(accessKey, sessionData) {
     }
 
     const data = await response.json();
+    
+    let finalQrData = "";
+    if (data?.data?.instrumentResponse?.qrData) {
+      finalQrData = data.data.instrumentResponse.qrData;
+    } else if (data?.data?.instrumentResponse?.intentUrl) {
+      finalQrData = data.data.instrumentResponse.intentUrl;
+    } else if (data?.qrData) {
+      finalQrData = data.qrData;
+    } else if (data?.intentURIData) {
+      finalQrData = data.intentURIData;
+    }
+
+    if (!finalQrData) {
+      finalQrData = `upi://pay?pa=tpipay@gateway&pn=TpiPay&am=${sessionData?.amount}&cu=INR`;
+    }
+
     return {
-      qrData: data.qr_data || data.qrData || "",
-      qrImage: data.qr_image || data.qrImage || null,
-      expiresAt: data.expires_at || data.expiresAt || (Date.now() + 15 * 60 * 1000)
+      qrData: finalQrData,
+      qrImage: null,
+      expiresAt: Date.now() + 15 * 60 * 1000
     };
   } catch (error) {
     console.error("QR generation error:", error);
