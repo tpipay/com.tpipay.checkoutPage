@@ -148,10 +148,11 @@ export async function generateQrCode(accessKey, sessionData) {
       finalQrData = `upi://pay?pa=tpipay@gateway&pn=TpiPay&am=${sessionData?.amount}&cu=INR`;
     }
 
+    const expirySeconds = data?.data?.expireAfter || data?.expireAfter || 1200;
     return {
       qrData: finalQrData,
       qrImage: null,
-      expiresAt: Date.now() + 15 * 60 * 1000
+      expiresAt: Date.now() + (expirySeconds * 1000)
     };
   } catch (error) {
     console.error("QR generation error:", error);
