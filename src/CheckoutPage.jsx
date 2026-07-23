@@ -18,6 +18,7 @@ export default function CheckoutPage() {
   const [paymentResult, setPaymentResult] = useState(null);
   const [activeTab, setActiveTab] = useState("upi"); // upi | netbanking | cards
   const [sessionExpired, setSessionExpired] = useState(false);
+  const isPhonePe = String(session?.gateway || session?.gateway_name || session?.pg_name || session?.merchant_name || "").toLowerCase().includes("phonepe");
 
   // Payment form states
   const [upiId, setUpiId] = useState("");
@@ -27,7 +28,7 @@ export default function CheckoutPage() {
     const ua = navigator.userAgent.toLowerCase();
     if (/android/.test(ua)) return "ANDROID";
     if (/iphone|ipad|ipod/.test(ua)) return "IOS";
-    return "WEB";
+    return "ANDROID";
   }, []);
 
   const [showQr, setShowQr] = useState(false);
@@ -237,7 +238,7 @@ export default function CheckoutPage() {
     submitPayment({
       access_key: accessKey,
       payment_mode: "UPI",
-      device_os: deviceOs,
+      device_os: isPhonePe && deviceOs === "IOS" ? "iOS" : deviceOs,
     });
   };
 
@@ -298,6 +299,12 @@ export default function CheckoutPage() {
     const s = String(secs % 60).padStart(2, "0");
     return `${m}:${s}`;
   };
+
+  useEffect(() => {
+    if (activeTab === "upi" && isPhonePe && deviceOs === "WEB" && !showQr && !qrData && !qrLoading) {
+      handleGenerateQr();
+    }
+  }, [activeTab, isPhonePe, deviceOs, showQr, qrData, qrLoading]);
 
   // Card input helpers
   const handleCardNumberChange = (e) => {
@@ -759,30 +766,34 @@ export default function CheckoutPage() {
               <div className="flex flex-col gap-4 animate-slide-left overflow-y-auto h-full pb-2">
                 {!showQr ? (
                   <>
-                    {/* UPI Intent section */}
-                    <div>
-                      <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">
-                        Pay via UPI Intent
-                      </label>
-                      <p className="text-xs text-slate-400 mb-3 leading-relaxed">
-                        You will be redirected to your UPI app to complete the payment securely.
-                      </p>
-                      <button
-                        type="button"
-                        onClick={handleUpiIntentPay}
-                        disabled={status === "processing" || status === "pending"}
-                        className="w-full py-4 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 active:scale-[0.98] transition-all text-white font-bold rounded-xl text-sm shadow-lg shadow-indigo-600/20 disabled:opacity-50 disabled:active:scale-100 flex items-center justify-center gap-2 group focus-ring"
-                      >
-                        <span>Pay ₹{amountStr} Securely</span>
-                        <span className="group-hover:translate-x-1 transition-transform">→</span>
-                      </button>
-                    </div>
+                    {!(isPhonePe && deviceOs === "WEB") && (
+                      <>
+                        {/* UPI Intent section */}
+                        <div>
+                          <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">
+                            Pay via UPI Intent
+                          </label>
+                          <p className="text-xs text-slate-400 mb-3 leading-relaxed">
+                            You will be redirected to your UPI app to complete the payment securely.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={handleUpiIntentPay}
+                            disabled={status === "processing" || status === "pending"}
+                            className="w-full py-4 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 active:scale-[0.98] transition-all text-white font-bold rounded-xl text-sm shadow-lg shadow-indigo-600/20 disabled:opacity-50 disabled:active:scale-100 flex items-center justify-center gap-2 group focus-ring"
+                          >
+                            <span>Pay ₹{amountStr} Securely</span>
+                            <span className="group-hover:translate-x-1 transition-transform">→</span>
+                          </button>
+                        </div>
 
-                    <div className="flex items-center gap-4 my-2 opacity-70">
-                      <div className="h-[1px] bg-slate-700 flex-1"></div>
-                      <span className="text-[10px] uppercase font-black tracking-widest text-slate-500">Or Pay Using UPI ID</span>
-                      <div className="h-[1px] bg-slate-700 flex-1"></div>
-                    </div>
+                        <div className="flex items-center gap-4 my-2 opacity-70">
+                          <div className="h-[1px] bg-slate-700 flex-1"></div>
+                          <span className="text-[10px] uppercase font-black tracking-widest text-slate-500">Or Pay Using UPI ID</span>
+                          <div className="h-[1px] bg-slate-700 flex-1"></div>
+                        </div>
+                      </>
+                    )}
 
                     <form onSubmit={handleUpiPay} className="space-y-5">
                       <div>
@@ -884,26 +895,14 @@ export default function CheckoutPage() {
                     {/* QR Code box */}
                     <div className="relative">
                       <div className={`bg-white p-4 rounded-2xl shadow-2xl shadow-black/50 border-4 border-slate-800 relative transition-all duration-300 ${qrExpired ? "opacity-30 grayscale" : "group hover:scale-105"}`}>
-                        <div className="w-44 h-44 bg-white relative">
-                          {/* QR pattern */}
-                          <div className="absolute inset-0 grid grid-cols-7 gap-[2px] p-1">
-                            {[1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1].map((v, i) => (
-                              <div key={`tl-${i}`} className={`rounded-[1px] ${v ? "bg-slate-900" : "bg-transparent"}`} />
-                            ))}
-                          </div>
-                          <div className="absolute inset-0 grid grid-cols-7 gap-[2px] p-1" style={{ left: "auto", right: 0, width: "calc(100%*7/14)" }}>
-                            {[1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1].map((v, i) => (
-                              <div key={`tr-${i}`} className={`rounded-[1px] ${v ? "bg-slate-900" : "bg-transparent"}`} />
-                            ))}
-                          </div>
-                          {/* Centre data dots */}
-                          <div className="absolute inset-0 flex items-center justify-center">
-                            <div className="grid grid-cols-5 gap-[3px]">
-                              {Array.from({ length: 25 }).map((_, i) => (
-                                <div key={i} className={`w-2 h-2 rounded-[1px] ${[0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24].includes(i) ? "bg-slate-900" : "bg-slate-900/20"}`} />
-                              ))}
-                            </div>
-                          </div>
+                        <div className="w-44 h-44 bg-white relative flex items-center justify-center p-2">
+                          {qrData?.qrImage ? (
+                            <img src={qrData.qrImage.startsWith('http') || qrData.qrImage.startsWith('data:') ? qrData.qrImage : `data:image/png;base64,${qrData.qrImage}`} alt="QR Code" className="w-full h-full object-contain" />
+                          ) : qrData?.qrData ? (
+                            <img src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrData.qrData)}`} alt="QR Code" className="w-full h-full object-contain" />
+                          ) : (
+                            <div className="w-6 h-6 border-2 border-violet-500 border-t-transparent rounded-full animate-spin"></div>
+                          )}
                         </div>
                         {!qrExpired && <div className="absolute inset-x-4 top-4 h-0.5 bg-violet-500/60 blur-[1.5px] rounded-full animate-[float_2s_ease-in-out_infinite]" />}
                       </div>
