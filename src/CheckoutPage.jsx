@@ -93,6 +93,43 @@ export default function CheckoutPage() {
   // Fetch session details on mount
   const defaultExpiresAt = useRef(Date.now() + 15 * 60 * 1000);
 
+  const startPolling = useCallback(() => {
+    if (pollingInterval.current) clearInterval(pollingInterval.current);
+    pollCountRef.current = 0;
+    pollingInterval.current = setInterval(async () => {
+      pollCountRef.current += 1;
+      if (pollCountRef.current > 300) {
+        clearInterval(pollingInterval.current);
+        setStatus("failed");
+        setStatusMessage("Payment verification timed out. Please check your payment status.");
+        setPaymentResult({ reason: "PAYMENT_TIMEOUT" });
+        return;
+      }
+      try {
+        const result = await pollPaymentStatus(accessKey);
+        if (result.status === "SUCCESS") {
+          clearInterval(pollingInterval.current);
+          setStatus("success");
+          setStatusMessage("Payment received successfully!");
+          setPaymentResult(result);
+        } else if (result.status === "FAILED") {
+          clearInterval(pollingInterval.current);
+          setStatus("failed");
+          setStatusMessage(result.message || "Payment failed");
+          setPaymentResult(result);
+        } else if (result.status === "EXPIRED" || result.status === "CANCELLED") {
+          clearInterval(pollingInterval.current);
+          setStatus("failed");
+          setStatusMessage(result.message || (result.status === "EXPIRED" ? "Payment expired" : "Payment cancelled"));
+          setPaymentResult(result);
+        }
+      } catch (e) {
+        console.error("Polling error", e);
+      }
+    }, 3000);
+  }, [accessKey]);
+
+  // Fetch session and detect redirect returns
   useEffect(() => {
     async function loadSession() {
       setLoading(true);
@@ -186,42 +223,6 @@ export default function CheckoutPage() {
     setStatusMessage("Payment session expired. Please return to merchant and try again.");
     setPaymentResult({ reason: "SESSION_EXPIRED" });
   }, []);
-
-  const startPolling = useCallback(() => {
-    if (pollingInterval.current) clearInterval(pollingInterval.current);
-    pollCountRef.current = 0;
-    pollingInterval.current = setInterval(async () => {
-      pollCountRef.current += 1;
-      if (pollCountRef.current > 300) {
-        clearInterval(pollingInterval.current);
-        setStatus("failed");
-        setStatusMessage("Payment verification timed out. Please check your payment status.");
-        setPaymentResult({ reason: "PAYMENT_TIMEOUT" });
-        return;
-      }
-      try {
-        const result = await pollPaymentStatus(accessKey);
-        if (result.status === "SUCCESS") {
-          clearInterval(pollingInterval.current);
-          setStatus("success");
-          setStatusMessage("Payment received successfully!");
-          setPaymentResult(result);
-        } else if (result.status === "FAILED") {
-          clearInterval(pollingInterval.current);
-          setStatus("failed");
-          setStatusMessage(result.message || "Payment failed");
-          setPaymentResult(result);
-        } else if (result.status === "EXPIRED" || result.status === "CANCELLED") {
-          clearInterval(pollingInterval.current);
-          setStatus("failed");
-          setStatusMessage(result.message || (result.status === "EXPIRED" ? "Payment expired" : "Payment cancelled"));
-          setPaymentResult(result);
-        }
-      } catch (e) {
-        console.error("Polling error", e);
-      }
-    }, 3000);
-  }, [accessKey]);
 
   // UPI Handlers
   const handleUpiVerify = async () => {
@@ -385,11 +386,18 @@ export default function CheckoutPage() {
       setPaymentResult(response);
 
       if (response?.type === "card_s2s" || response?.type === "nb_redirect") {
-        if (response?.acsTemplate && redirectWin) {
+        if (response?.acsTemplate) {
           try {
-            redirectWin.document.open();
-            redirectWin.document.write(atob(response.acsTemplate));
-            redirectWin.document.close();
+            if (redirectWin) {
+              redirectWin.document.open();
+              redirectWin.document.write(atob(response.acsTemplate));
+              redirectWin.document.close();
+            } else {
+              document.open();
+              document.write(atob(response.acsTemplate));
+              document.close();
+              return;
+            }
           } catch (e) {
             console.error("Failed to write ACS template:", e);
           }
