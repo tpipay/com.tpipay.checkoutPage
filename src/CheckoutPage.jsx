@@ -154,11 +154,7 @@ export default function CheckoutPage() {
           } else {
             try {
               const statusResult = await pollPaymentStatus(accessKey);
-              if (statusResult.status === "PENDING") {
-                startPolling();
-                setStatus("pending");
-                setStatusMessage("Verification in progress. Please wait...");
-              } else if (statusResult.status === "SUCCESS") {
+              if (statusResult.status === "SUCCESS") {
                 clearInterval(pollingInterval.current);
                 setStatus("success");
                 setStatusMessage("Payment received successfully!");
@@ -170,6 +166,7 @@ export default function CheckoutPage() {
                 setPaymentResult(statusResult);
               }
             } catch (e) {
+
 
             }
           }
