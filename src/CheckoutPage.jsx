@@ -51,6 +51,7 @@ export default function CheckoutPage() {
   const [focusedField, setFocusedField] = useState("");
 
   const pollingInterval = useRef(null);
+  const pollCountRef = useRef(0);
   const [intentUrl, setIntentUrl] = useState(null);
 
   // Popular banks lists
@@ -105,6 +106,36 @@ export default function CheckoutPage() {
           if (response.data.sessionExpiresAt && Date.now() >= response.data.sessionExpiresAt) {
             setSessionExpired(true);
           }
+
+          const params = new URLSearchParams(window.location.search);
+          const redirectStatus = params.get("status");
+          if (redirectStatus === "pending" || redirectStatus === "PENDING") {
+            window.history.replaceState({}, "", window.location.pathname);
+            startPolling();
+            setStatus("pending");
+            setStatusMessage("Verification in progress. Please wait...");
+          } else {
+            try {
+              const statusResult = await pollPaymentStatus(accessKey);
+              if (statusResult.status === "PENDING") {
+                startPolling();
+                setStatus("pending");
+                setStatusMessage("Verification in progress. Please wait...");
+              } else if (statusResult.status === "SUCCESS") {
+                clearInterval(pollingInterval.current);
+                setStatus("success");
+                setStatusMessage("Payment received successfully!");
+                setPaymentResult(statusResult);
+              } else if (statusResult.status === "FAILED" || statusResult.status === "EXPIRED" || statusResult.status === "CANCELLED") {
+                clearInterval(pollingInterval.current);
+                setStatus("failed");
+                setStatusMessage(statusResult.message || "Payment failed");
+                setPaymentResult(statusResult);
+              }
+            } catch (e) {
+
+            }
+          }
         } else {
           setStatus("failed");
           setStatusMessage("Failed to load secure session. Invalid access key.");
@@ -120,7 +151,7 @@ export default function CheckoutPage() {
     if (accessKey) {
       loadSession();
     }
-  }, [accessKey]);
+  }, [accessKey, startPolling]);
 
   // Cleanup polling and QR timer on unmount
   useEffect(() => {
@@ -158,7 +189,16 @@ export default function CheckoutPage() {
 
   const startPolling = useCallback(() => {
     if (pollingInterval.current) clearInterval(pollingInterval.current);
+    pollCountRef.current = 0;
     pollingInterval.current = setInterval(async () => {
+      pollCountRef.current += 1;
+      if (pollCountRef.current > 300) {
+        clearInterval(pollingInterval.current);
+        setStatus("failed");
+        setStatusMessage("Payment verification timed out. Please check your payment status.");
+        setPaymentResult({ reason: "PAYMENT_TIMEOUT" });
+        return;
+      }
       try {
         const result = await pollPaymentStatus(accessKey);
         if (result.status === "SUCCESS") {
@@ -170,6 +210,11 @@ export default function CheckoutPage() {
           clearInterval(pollingInterval.current);
           setStatus("failed");
           setStatusMessage(result.message || "Payment failed");
+          setPaymentResult(result);
+        } else if (result.status === "EXPIRED" || result.status === "CANCELLED") {
+          clearInterval(pollingInterval.current);
+          setStatus("failed");
+          setStatusMessage(result.message || (result.status === "EXPIRED" ? "Payment expired" : "Payment cancelled"));
           setPaymentResult(result);
         }
       } catch (e) {
@@ -332,47 +377,91 @@ export default function CheckoutPage() {
   const submitPayment = async (payload) => {
     if (sessionExpired) return;
     setStatus("processing");
+
+    const redirectWin = window.open("", "_blank");
+
     try {
       const response = await processPayment(payload);
       setPaymentResult(response);
 
-      // Handle PayU S2S response types that require 3DS authentication
       if (response?.type === "card_s2s" || response?.type === "nb_redirect") {
-        handleAcsTemplate(response);
+        if (response?.acsTemplate && redirectWin) {
+          try {
+            redirectWin.document.open();
+            redirectWin.document.write(atob(response.acsTemplate));
+            redirectWin.document.close();
+          } catch (e) {
+            console.error("Failed to write ACS template:", e);
+          }
+        }
+        setStatus("pending");
+        setStatusMessage("Redirecting to bank for 3D Secure authentication...");
+        startPolling();
         return;
       }
 
-      // Handle UPI QR response type
       if (response?.type === "upi_qr" || response?.intentURIData) {
+        if (redirectWin) redirectWin.close();
         setStatus("pending");
         setStatusMessage("Scan QR code with UPI app to pay");
         startPolling();
         return;
       }
 
-      // Handle form-based redirect response (action + fields to POST to PayU)
       if (response?.action && response?.fields) {
-        submitPayUForm(response);
+        if (redirectWin) {
+          try {
+            const pairs = Object.entries(response.fields).map(([k, v]) => `<input type="hidden" name="${k.replace(/"/g, '&quot;')}" value="${String(v).replace(/"/g, '&quot;')}" />`).join("\n");
+            redirectWin.document.open();
+            redirectWin.document.write(`<!DOCTYPE html><html><body><form id="f" method="${response.method || "POST"}" action="${response.action.replace(/"/g, '&quot;')}">${pairs}</form><script>document.getElementById('f').submit();<\/script></body></html>`);
+            redirectWin.document.close();
+          } catch (e) {
+            console.error("Failed to submit PayU form:", e);
+          }
+        } else {
+          const form = document.createElement("form");
+          form.method = response.method || "POST";
+          form.action = response.action;
+          form.style.display = "none";
+          Object.entries(response.fields).forEach(([k, v]) => {
+            const input = document.createElement("input");
+            input.type = "hidden";
+            input.name = k;
+            input.value = v;
+            form.appendChild(input);
+          });
+          document.body.appendChild(form);
+          form.submit();
+        }
+        setStatus("pending");
+        setStatusMessage("Redirecting to PayU payment page...");
+        startPolling();
         return;
       }
 
-      // Handle redirect URL (e.g. card 3DS, bank page) - open in new tab
       if (response?.redirectUrl) {
+        if (redirectWin) {
+          redirectWin.location.href = response.redirectUrl;
+        } else {
+          window.location.href = response.redirectUrl;
+          return;
+        }
         setStatus("pending");
         setStatusMessage("Redirecting to payment page...");
         startPolling();
-        window.open(response.redirectUrl, "_blank");
         return;
       }
 
-      // Handle UPI Intent deep link
       if (response?.intentUrl) {
+        if (redirectWin) redirectWin.close();
         setStatus("pending");
         setStatusMessage(response.message || "Opening UPI app...");
         startPolling();
         setIntentUrl(response.intentUrl);
         return;
       }
+
+      if (redirectWin) redirectWin.close();
 
       if (response?.status === "success" || response?.success === true) {
         setStatus("success");
@@ -387,67 +476,11 @@ export default function CheckoutPage() {
       }
     } catch (err) {
       console.error("Payment error:", err);
+      if (redirectWin) redirectWin.close();
       setStatus("failed");
       setStatusMessage("Gateway response timeout. Check connection.");
       setPaymentResult({ reason: "NETWORK_ERROR" });
     }
-  };
-
-  // Handle ACS template (3DS) for PayU card_s2s and nb_redirect responses
-  const handleAcsTemplate = (response) => {
-    if (response?.acsTemplate) {
-      try {
-        // Decode Base64 HTML template
-        const html = atob(response.acsTemplate);
-        // Create a form and submit to a new window/tab for 3DS authentication
-        const win = window.open("", "_blank");
-        if (win) {
-          win.document.write(html);
-          win.document.close();
-        }
-        setStatus("pending");
-        setStatusMessage("Redirecting to bank for 3D Secure authentication...");
-      } catch (e) {
-        console.error("Failed to decode ACS template:", e);
-        setStatus("pending");
-        setStatusMessage("Waiting for OTP verification...");
-        startPolling();
-      }
-    } else {
-      // No ACS template means payment may be complete already
-      if (response?.txnStatus === "success" || response?.unmappedStatus === "success") {
-        setStatus("success");
-        setStatusMessage("Payment completed successfully!");
-      } else {
-        setStatus("pending");
-        setStatusMessage("Waiting for gateway confirmation...");
-        startPolling();
-      }
-    }
-  };
-
-  // Handle form-based redirect: build a hidden HTML form and auto-submit to PayU
-  const submitPayUForm = (response) => {
-    const form = document.createElement("form");
-    form.method = response.method || "POST";
-    form.action = response.action;
-    form.target = "_blank";
-    form.style.display = "none";
-    if (response.fields) {
-      Object.entries(response.fields).forEach(([key, value]) => {
-        const input = document.createElement("input");
-        input.type = "hidden";
-        input.name = key;
-        input.value = value;
-        form.appendChild(input);
-      });
-    }
-    document.body.appendChild(form);
-    form.submit();
-    document.body.removeChild(form);
-    setStatus("pending");
-    setStatusMessage("Redirecting to PayU payment page...");
-    startPolling();
   };
 
   const filteredBanks = allBanks.filter((bank) =>
@@ -484,9 +517,25 @@ export default function CheckoutPage() {
         paymentResult={paymentResult}
         activeTab={activeTab}
         onRetry={() => {
-          setStatus("idle");
-          setPaymentResult(null);
-          if (pollingInterval.current) clearInterval(pollingInterval.current);
+          if (status === "pending") {
+            pollPaymentStatus(accessKey).then(result => {
+              if (result.status === "SUCCESS") {
+                clearInterval(pollingInterval.current);
+                setStatus("success");
+                setStatusMessage("Payment received successfully!");
+                setPaymentResult(result);
+              } else if (result.status === "FAILED" || result.status === "EXPIRED" || result.status === "CANCELLED") {
+                clearInterval(pollingInterval.current);
+                setStatus("failed");
+                setStatusMessage(result.message || "Payment failed");
+                setPaymentResult(result);
+              }
+            }).catch(() => {});
+          } else {
+            setStatus("idle");
+            setPaymentResult(null);
+            if (pollingInterval.current) clearInterval(pollingInterval.current);
+          }
         }}
       />
     );
