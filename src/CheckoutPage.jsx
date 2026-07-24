@@ -39,6 +39,7 @@ export default function CheckoutPage() {
   const [qrTimerSeconds, setQrTimerSeconds] = useState(900);
   const [qrExpired, setQrExpired] = useState(false);
   const [autoQrGenerated, setAutoQrGenerated] = useState(false);
+  const [selectedUpiApp, setSelectedUpiApp] = useState(null);
 
   const [autopayData, setAutopayData] = useState({ accountNumber: "", ifsc: "", accountName: "", bankName: "", maxAmount: "" });
 
@@ -242,6 +243,7 @@ export default function CheckoutPage() {
       access_key: accessKey,
       payment_mode: "UPI",
       device_os: isPhonePe && deviceOs === "IOS" ? "iOS" : deviceOs,
+      ...(selectedUpiApp && { target_app: selectedUpiApp }),
     });
   };
 
@@ -423,6 +425,20 @@ export default function CheckoutPage() {
 
       if (response?.type === "upi_qr" || response?.intentURIData) {
         if (redirectWin) redirectWin.close();
+
+        const deeplink = response.deeplink || response.qrString || response.intentURIData || "";
+        const acsTemplate = response.acsTemplate || "";
+
+        setQrData({
+          qrData: deeplink,
+          acsTemplate: acsTemplate,
+          expiresAt: Date.now() + 15 * 60 * 1000,
+        });
+
+        if (/android|iphone|ipad|ipod/i.test(navigator.userAgent) && deeplink) {
+          window.location.href = deeplink;
+        }
+        setShowQr(true);
         setStatus("pending");
         setStatusMessage("Scan QR code with UPI app to pay");
         startPolling();
@@ -789,6 +805,27 @@ export default function CheckoutPage() {
                       <p className="text-xs text-slate-400 mb-3 leading-relaxed">
                         You will be redirected to your UPI app to complete the payment securely.
                       </p>
+                      <div className="flex gap-2 justify-center mb-3">
+                        {[
+                          { id: "gpay", img: gpayImg, label: "GPay" },
+                          { id: "phonepe", img: phonepeImg, label: "PhonePe" },
+                          { id: "paytm", img: paytmImg, label: "Paytm" },
+                        ].map(app => (
+                          <button
+                            key={app.id}
+                            type="button"
+                            onClick={() => setSelectedUpiApp(selectedUpiApp === app.id ? null : app.id)}
+                            className={`flex flex-col items-center gap-1 p-2 rounded-xl border-2 transition-all ${
+                              selectedUpiApp === app.id
+                                ? "border-violet-500 bg-violet-500/10"
+                                : "border-slate-700/50 hover:border-slate-600 bg-slate-950/30"
+                            }`}
+                          >
+                            <img src={app.img} alt={app.label} className="w-8 h-8 object-contain" />
+                            <span className="text-[9px] font-bold text-slate-400">{app.label}</span>
+                          </button>
+                        ))}
+                      </div>
                       <button
                         type="button"
                         onClick={handleUpiIntentPay}
@@ -881,26 +918,12 @@ export default function CheckoutPage() {
                     {/* QR Code box */}
                     <div className="relative">
                       <div className={`bg-white p-4 rounded-2xl shadow-2xl shadow-black/50 border-4 border-slate-800 relative transition-all duration-300 ${qrExpired ? "opacity-30 grayscale" : "group hover:scale-105"}`}>
-                        <div className="w-44 h-44 bg-white relative">
-                          {/* QR pattern */}
-                          <div className="absolute inset-0 grid grid-cols-7 gap-[2px] p-1">
-                            {[1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1].map((v, i) => (
-                              <div key={`tl-${i}`} className={`rounded-[1px] ${v ? "bg-slate-900" : "bg-transparent"}`} />
-                            ))}
-                          </div>
-                          <div className="absolute inset-0 grid grid-cols-7 gap-[2px] p-1" style={{ left: "auto", right: 0, width: "calc(100%*7/14)" }}>
-                            {[1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1].map((v, i) => (
-                              <div key={`tr-${i}`} className={`rounded-[1px] ${v ? "bg-slate-900" : "bg-transparent"}`} />
-                            ))}
-                          </div>
-                          {/* Centre data dots */}
-                          <div className="absolute inset-0 flex items-center justify-center">
-                            <div className="grid grid-cols-5 gap-[3px]">
-                              {Array.from({ length: 25 }).map((_, i) => (
-                                <div key={i} className={`w-2 h-2 rounded-[1px] ${[0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24].includes(i) ? "bg-slate-900" : "bg-slate-900/20"}`} />
-                              ))}
-                            </div>
-                          </div>
+                        <div className="w-44 h-44 bg-white flex items-center justify-center">
+                          {qrData?.qrData ? (
+                            <QRCode value={qrData.qrData} size={160} />
+                          ) : (
+                            <span className="text-xs text-slate-400">No QR data</span>
+                          )}
                         </div>
                         {!qrExpired && <div className="absolute inset-x-4 top-4 h-0.5 bg-violet-500/60 blur-[1.5px] rounded-full animate-[float_2s_ease-in-out_infinite]" />}
                       </div>
@@ -932,6 +955,20 @@ export default function CheckoutPage() {
                           <img src={phonepeImg} alt="PhonePe" className="h-6 object-contain opacity-80" />
                           <img src={paytmImg} alt="Paytm" className="h-6 object-contain opacity-80" />
                         </div>
+                        {qrData?.acsTemplate && (
+                          <button
+                            onClick={() => {
+                              const win = window.open("about:blank", "_blank");
+                              if (win) {
+                                win.document.write(atob(qrData.acsTemplate));
+                                win.document.close();
+                              }
+                            }}
+                            className="mt-2 text-[10px] text-violet-400 hover:text-violet-300 underline underline-offset-2 transition-colors"
+                          >
+                            Open in browser (fallback)
+                          </button>
+                        )}
                       </div>
                     ) : (
                       <div className="mt-3 text-center space-y-2">
