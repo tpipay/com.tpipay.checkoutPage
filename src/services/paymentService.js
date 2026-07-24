@@ -114,7 +114,8 @@ export async function generateQrCode(accessKey, sessionData) {
   try {
     const payload = {
       access_key: accessKey,
-      payment_mode: "UPI_QR",
+      payment_mode: "UPI",
+      request_mode: "4",
       device_os: "WEB"
     };
     
@@ -134,7 +135,11 @@ export async function generateQrCode(accessKey, sessionData) {
     const data = await response.json();
     
     let finalQrData = "";
-    if (data?.data?.instrumentResponse?.qrData) {
+    if (data?.deeplink) {
+      finalQrData = data.deeplink;
+    } else if (data?.qrString) {
+      finalQrData = data.qrString;
+    } else if (data?.data?.instrumentResponse?.qrData) {
       finalQrData = data.data.instrumentResponse.qrData;
     } else if (data?.data?.instrumentResponse?.intentUrl) {
       finalQrData = data.data.instrumentResponse.intentUrl;
