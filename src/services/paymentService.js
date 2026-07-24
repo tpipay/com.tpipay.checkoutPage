@@ -1,4 +1,4 @@
-const getApiBaseUrl = () => {
+function getApiBaseUrl() {
   const configured = import.meta.env.VITE_API_BASE_URL;
 
   // 1) Prefer configured value if it is a non-empty string.
@@ -25,18 +25,18 @@ const getApiBaseUrl = () => {
   return "http://localhost:8080";
 };
 
-const API_BASE_URL = getApiBaseUrl();
+var API_BASE_URL = getApiBaseUrl();
 
 
-const getSecureRandom = () => {
+function getSecureRandom() {
   const array = new Uint32Array(1);
   crypto.getRandomValues(array);
   return array[0] / 4294967296;
-};
+}
 
-const getSecureRandomInt = (max) => {
+function getSecureRandomInt(max) {
   return Math.floor(getSecureRandom() * max);
-};
+}
 
 
 /**

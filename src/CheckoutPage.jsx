@@ -19,6 +19,7 @@ export default function CheckoutPage() {
   const [paymentResult, setPaymentResult] = useState(null);
   const [activeTab, setActiveTab] = useState("upi"); // upi | netbanking | cards
   const [sessionExpired, setSessionExpired] = useState(false);
+  const isPhonePe = String(session?.gateway || session?.gateway_name || session?.pg_name || session?.merchant_name || "").toLowerCase().includes("phonepe");
 
   // Payment form states
   const [upiId, setUpiId] = useState("");
@@ -28,7 +29,7 @@ export default function CheckoutPage() {
     const ua = navigator.userAgent.toLowerCase();
     if (/android/.test(ua)) return "ANDROID";
     if (/iphone|ipad|ipod/.test(ua)) return "IOS";
-    return "WEB";
+    return "ANDROID";
   }, []);
 
   const [showQr, setShowQr] = useState(false);
@@ -53,6 +54,7 @@ export default function CheckoutPage() {
   const [focusedField, setFocusedField] = useState("");
 
   const pollingInterval = useRef(null);
+  const pollCountRef = useRef(0);
   const [intentUrl, setIntentUrl] = useState(null);
 
   // Popular banks lists
@@ -94,6 +96,43 @@ export default function CheckoutPage() {
   // Fetch session details on mount
   const defaultExpiresAt = useRef(Date.now() + 15 * 60 * 1000);
 
+  const startPolling = useCallback(() => {
+    if (pollingInterval.current) clearInterval(pollingInterval.current);
+    pollCountRef.current = 0;
+    pollingInterval.current = setInterval(async () => {
+      pollCountRef.current += 1;
+      if (pollCountRef.current > 300) {
+        clearInterval(pollingInterval.current);
+        setStatus("failed");
+        setStatusMessage("Payment verification timed out. Please check your payment status.");
+        setPaymentResult({ reason: "PAYMENT_TIMEOUT" });
+        return;
+      }
+      try {
+        const result = await pollPaymentStatus(accessKey);
+        if (result.status === "SUCCESS") {
+          clearInterval(pollingInterval.current);
+          setStatus("success");
+          setStatusMessage("Payment received successfully!");
+          setPaymentResult(result);
+        } else if (result.status === "FAILED") {
+          clearInterval(pollingInterval.current);
+          setStatus("failed");
+          setStatusMessage(result.message || "Payment failed");
+          setPaymentResult(result);
+        } else if (result.status === "EXPIRED" || result.status === "CANCELLED") {
+          clearInterval(pollingInterval.current);
+          setStatus("failed");
+          setStatusMessage(result.message || (result.status === "EXPIRED" ? "Payment expired" : "Payment cancelled"));
+          setPaymentResult(result);
+        }
+      } catch (e) {
+        console.error("Polling error", e);
+      }
+    }, 3000);
+  }, [accessKey]);
+
+  // Fetch session and detect redirect returns
   useEffect(() => {
     async function loadSession() {
       setLoading(true);
@@ -106,6 +145,33 @@ export default function CheckoutPage() {
           }
           if (response.data.sessionExpiresAt && Date.now() >= response.data.sessionExpiresAt) {
             setSessionExpired(true);
+          }
+
+          const params = new URLSearchParams(window.location.search);
+          const redirectStatus = params.get("status");
+          if (redirectStatus === "pending" || redirectStatus === "PENDING") {
+            window.history.replaceState({}, "", window.location.pathname);
+            startPolling();
+            setStatus("pending");
+            setStatusMessage("Verification in progress. Please wait...");
+          } else {
+            try {
+              const statusResult = await pollPaymentStatus(accessKey);
+              if (statusResult.status === "SUCCESS") {
+                clearInterval(pollingInterval.current);
+                setStatus("success");
+                setStatusMessage("Payment received successfully!");
+                setPaymentResult(statusResult);
+              } else if (statusResult.status === "FAILED" || statusResult.status === "EXPIRED" || statusResult.status === "CANCELLED") {
+                clearInterval(pollingInterval.current);
+                setStatus("failed");
+                setStatusMessage(statusResult.message || "Payment failed");
+                setPaymentResult(statusResult);
+              }
+            } catch (e) {
+
+
+            }
           }
         } else {
           setStatus("failed");
@@ -122,7 +188,7 @@ export default function CheckoutPage() {
     if (accessKey) {
       loadSession();
     }
-  }, [accessKey]);
+  }, [accessKey, startPolling]);
 
   // Cleanup polling and QR timer on unmount
   useEffect(() => {
@@ -185,16 +251,6 @@ export default function CheckoutPage() {
           setStatus("failed");
           setStatusMessage(result.message || "Payment failed");
           setPaymentResult(result);
-        } else if (result.status === "CANCELLED") {
-          clearInterval(pollingInterval.current);
-          setStatus("failed");
-          setStatusMessage(result.message || "Payment was cancelled by the user");
-          setPaymentResult(result);
-        } else if (result.status === "EXPIRED") {
-          clearInterval(pollingInterval.current);
-          setStatus("failed");
-          setStatusMessage(result.message || "Payment session expired");
-          setPaymentResult(result);
         }
       } catch (e) {
         console.error("Polling error", e);
@@ -218,7 +274,7 @@ export default function CheckoutPage() {
     submitPayment({
       access_key: accessKey,
       payment_mode: "UPI",
-      device_os: deviceOs,
+      device_os: isPhonePe && deviceOs === "IOS" ? "iOS" : deviceOs,
     });
   };
 
@@ -283,6 +339,12 @@ export default function CheckoutPage() {
     const s = String(secs % 60).padStart(2, "0");
     return `${m}:${s}`;
   };
+
+  useEffect(() => {
+    if (activeTab === "upi" && isPhonePe && deviceOs === "WEB" && !showQr && !qrData && !qrLoading) {
+      handleGenerateQr();
+    }
+  }, [activeTab, isPhonePe, deviceOs, showQr, qrData, qrLoading]);
 
   // Card input helpers
   const handleCardNumberChange = (e) => {
@@ -360,41 +422,90 @@ export default function CheckoutPage() {
   const submitPayment = async (payload) => {
     if (sessionExpired) return;
     setStatus("processing");
+
+    const redirectWin = window.open("", "_blank");
+
     try {
       const response = await processPayment(payload);
       setPaymentResult(response);
 
-      // Handle PayU S2S response types that require 3DS authentication
       if (response?.type === "card_s2s" || response?.type === "nb_redirect") {
-        handleAcsTemplate(response);
+        if (response?.acsTemplate) {
+          try {
+            if (redirectWin) {
+              redirectWin.document.open();
+              redirectWin.document.write(atob(response.acsTemplate));
+              redirectWin.document.close();
+            } else {
+              document.open();
+              document.write(atob(response.acsTemplate));
+              document.close();
+              return;
+            }
+          } catch (e) {
+            console.error("Failed to write ACS template:", e);
+          }
+        }
+        setStatus("pending");
+        setStatusMessage("Redirecting to bank for 3D Secure authentication...");
+        startPolling();
         return;
       }
 
-      // Handle UPI QR response type
       if (response?.type === "upi_qr" || response?.intentURIData) {
+        if (redirectWin) redirectWin.close();
         setStatus("pending");
         setStatusMessage("Scan QR code with UPI app to pay");
         startPolling();
         return;
       }
 
-      // Handle form-based redirect response (action + fields to POST to PayU)
       if (response?.action && response?.fields) {
-        submitPayUForm(response);
+        if (redirectWin) {
+          try {
+            const pairs = Object.entries(response.fields).map(([k, v]) => `<input type="hidden" name="${k.replace(/"/g, '&quot;')}" value="${String(v).replace(/"/g, '&quot;')}" />`).join("\n");
+            redirectWin.document.open();
+            redirectWin.document.write(`<!DOCTYPE html><html><body><form id="f" method="${response.method || "POST"}" action="${response.action.replace(/"/g, '&quot;')}">${pairs}</form><script>document.getElementById('f').submit();<\/script></body></html>`);
+            redirectWin.document.close();
+          } catch (e) {
+            console.error("Failed to submit PayU form:", e);
+          }
+        } else {
+          const form = document.createElement("form");
+          form.method = response.method || "POST";
+          form.action = response.action;
+          form.style.display = "none";
+          Object.entries(response.fields).forEach(([k, v]) => {
+            const input = document.createElement("input");
+            input.type = "hidden";
+            input.name = k;
+            input.value = v;
+            form.appendChild(input);
+          });
+          document.body.appendChild(form);
+          form.submit();
+        }
+        setStatus("pending");
+        setStatusMessage("Redirecting to PayU payment page...");
+        startPolling();
         return;
       }
 
-      // Handle redirect URL (e.g. card 3DS, bank page) - open in new tab
       if (response?.redirectUrl) {
+        if (redirectWin) {
+          redirectWin.location.href = response.redirectUrl;
+        } else {
+          window.location.href = response.redirectUrl;
+          return;
+        }
         setStatus("pending");
         setStatusMessage("Redirecting to payment page...");
         startPolling();
-        window.open(response.redirectUrl, "_blank");
         return;
       }
 
-      // Handle UPI Intent deep link
       if (response?.intentUrl) {
+        if (redirectWin) redirectWin.close();
         setStatus("pending");
         setStatusMessage(response.message || "Opening UPI app...");
         startPolling();
@@ -405,6 +516,8 @@ export default function CheckoutPage() {
         }
         return;
       }
+
+      if (redirectWin) redirectWin.close();
 
       if (response?.status === "success" || response?.success === true) {
         setStatus("success");
@@ -419,67 +532,11 @@ export default function CheckoutPage() {
       }
     } catch (err) {
       console.error("Payment error:", err);
+      if (redirectWin) redirectWin.close();
       setStatus("failed");
       setStatusMessage("Gateway response timeout. Check connection.");
       setPaymentResult({ reason: "NETWORK_ERROR" });
     }
-  };
-
-  // Handle ACS template (3DS) for PayU card_s2s and nb_redirect responses
-  const handleAcsTemplate = (response) => {
-    if (response?.acsTemplate) {
-      try {
-        // Decode Base64 HTML template
-        const html = atob(response.acsTemplate);
-        // Create a form and submit to a new window/tab for 3DS authentication
-        const win = window.open("", "_blank");
-        if (win) {
-          win.document.write(html);
-          win.document.close();
-        }
-        setStatus("pending");
-        setStatusMessage("Redirecting to bank for 3D Secure authentication...");
-      } catch (e) {
-        console.error("Failed to decode ACS template:", e);
-        setStatus("pending");
-        setStatusMessage("Waiting for OTP verification...");
-        startPolling();
-      }
-    } else {
-      // No ACS template means payment may be complete already
-      if (response?.txnStatus === "success" || response?.unmappedStatus === "success") {
-        setStatus("success");
-        setStatusMessage("Payment completed successfully!");
-      } else {
-        setStatus("pending");
-        setStatusMessage("Waiting for gateway confirmation...");
-        startPolling();
-      }
-    }
-  };
-
-  // Handle form-based redirect: build a hidden HTML form and auto-submit to PayU
-  const submitPayUForm = (response) => {
-    const form = document.createElement("form");
-    form.method = response.method || "POST";
-    form.action = response.action;
-    form.target = "_blank";
-    form.style.display = "none";
-    if (response.fields) {
-      Object.entries(response.fields).forEach(([key, value]) => {
-        const input = document.createElement("input");
-        input.type = "hidden";
-        input.name = key;
-        input.value = value;
-        form.appendChild(input);
-      });
-    }
-    document.body.appendChild(form);
-    form.submit();
-    document.body.removeChild(form);
-    setStatus("pending");
-    setStatusMessage("Redirecting to PayU payment page...");
-    startPolling();
   };
 
   const filteredBanks = allBanks.filter((bank) =>
@@ -516,9 +573,25 @@ export default function CheckoutPage() {
         paymentResult={paymentResult}
         activeTab={activeTab}
         onRetry={() => {
-          setStatus("idle");
-          setPaymentResult(null);
-          if (pollingInterval.current) clearInterval(pollingInterval.current);
+          if (status === "pending") {
+            pollPaymentStatus(accessKey).then(result => {
+              if (result.status === "SUCCESS") {
+                clearInterval(pollingInterval.current);
+                setStatus("success");
+                setStatusMessage("Payment received successfully!");
+                setPaymentResult(result);
+              } else if (result.status === "FAILED" || result.status === "EXPIRED" || result.status === "CANCELLED") {
+                clearInterval(pollingInterval.current);
+                setStatus("failed");
+                setStatusMessage(result.message || "Payment failed");
+                setPaymentResult(result);
+              }
+            }).catch(() => {});
+          } else {
+            setStatus("idle");
+            setPaymentResult(null);
+            if (pollingInterval.current) clearInterval(pollingInterval.current);
+          }
         }}
       />
     );
@@ -739,29 +812,32 @@ export default function CheckoutPage() {
               <div className="flex flex-col gap-4 animate-slide-left overflow-y-auto h-full pb-2">
                 {!showQr ? (
                   <>
-                    {/* Mobile (Android): Pay Now button */}
-                    {deviceOs === "ANDROID" && (
-                      <div>
-                        <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">
-                          Pay via UPI
-                        </label>
-                        <p className="text-xs text-slate-400 mb-3 leading-relaxed">
-                          Tap below to open your UPI app and complete the payment securely.
-                        </p>
-                        <button
-                          type="button"
-                          onClick={handleUpiIntentPay}
-                          disabled={status === "processing" || status === "pending"}
-                          className="w-full py-4 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 active:scale-[0.98] transition-all text-white font-bold rounded-xl text-sm shadow-lg shadow-indigo-600/20 disabled:opacity-50 disabled:active:scale-100 flex items-center justify-center gap-2 group focus-ring"
-                        >
-                          <span>Pay ₹{amountStr} Securely</span>
-                          <span className="group-hover:translate-x-1 transition-transform">→</span>
-                        </button>
-                      </div>
-                    )}
+                    {/* UPI Intent section */}
+                    <div>
+                      <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">
+                        Pay via UPI Intent
+                      </label>
+                      <p className="text-xs text-slate-400 mb-3 leading-relaxed">
+                        You will be redirected to your UPI app to complete the payment securely.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handleUpiIntentPay}
+                        disabled={status === "processing" || status === "pending"}
+                        className="w-full py-4 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 active:scale-[0.98] transition-all text-white font-bold rounded-xl text-sm shadow-lg shadow-indigo-600/20 disabled:opacity-50 disabled:active:scale-100 flex items-center justify-center gap-2 group focus-ring"
+                      >
+                        <span>Pay ₹{amountStr} Securely</span>
+                        <span className="group-hover:translate-x-1 transition-transform">→</span>
+                      </button>
+                    </div>
 
-                    {/* iOS: Pay Now button only (no QR, no Copy) */}
-                    {deviceOs === "IOS" && (
+                    <div className="flex items-center gap-4 my-2 opacity-70">
+                      <div className="h-[1px] bg-slate-700 flex-1"></div>
+                      <span className="text-[10px] uppercase font-black tracking-widest text-slate-500">Or Pay Using UPI ID</span>
+                      <div className="h-[1px] bg-slate-700 flex-1"></div>
+                    </div>
+
+                    <form onSubmit={handleUpiPay} className="space-y-5">
                       <div>
                         <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">
                           Pay via UPI
@@ -836,19 +912,26 @@ export default function CheckoutPage() {
                     {/* QR Code box */}
                     <div className="relative">
                       <div className={`bg-white p-4 rounded-2xl shadow-2xl shadow-black/50 border-4 border-slate-800 relative transition-all duration-300 ${qrExpired ? "opacity-30 grayscale" : "group hover:scale-105"}`}>
-                        <div className="w-44 h-44 bg-white relative p-2 flex items-center justify-center rounded-xl">
-                          {qrData?.qrImage ? (
-                            <img src={qrData.qrImage.startsWith('http') || qrData.qrImage.startsWith('data:') ? qrData.qrImage : `data:image/png;base64,${qrData.qrImage}`} alt="UPI QR Code" className="w-full h-full object-contain" />
-                          ) : qrData?.qrData ? (
-                            <QRCode
-                              value={qrData.qrData}
-                              size={160}
-                              style={{ height: "auto", maxWidth: "100%", width: "100%" }}
-                              viewBox={`0 0 160 160`}
-                            />
-                          ) : (
-                            <div className="text-slate-400 text-xs font-bold">QR Image Unavailable</div>
-                          )}
+                        <div className="w-44 h-44 bg-white relative">
+                          {/* QR pattern */}
+                          <div className="absolute inset-0 grid grid-cols-7 gap-[2px] p-1">
+                            {[1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1].map((v, i) => (
+                              <div key={`tl-${i}`} className={`rounded-[1px] ${v ? "bg-slate-900" : "bg-transparent"}`} />
+                            ))}
+                          </div>
+                          <div className="absolute inset-0 grid grid-cols-7 gap-[2px] p-1" style={{ left: "auto", right: 0, width: "calc(100%*7/14)" }}>
+                            {[1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1].map((v, i) => (
+                              <div key={`tr-${i}`} className={`rounded-[1px] ${v ? "bg-slate-900" : "bg-transparent"}`} />
+                            ))}
+                          </div>
+                          {/* Centre data dots */}
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <div className="grid grid-cols-5 gap-[3px]">
+                              {Array.from({ length: 25 }).map((_, i) => (
+                                <div key={i} className={`w-2 h-2 rounded-[1px] ${[0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24].includes(i) ? "bg-slate-900" : "bg-slate-900/20"}`} />
+                              ))}
+                            </div>
+                          </div>
                         </div>
                         {!qrExpired && <div className="absolute inset-x-4 top-4 h-0.5 bg-violet-500/60 blur-[1.5px] rounded-full animate-[float_2s_ease-in-out_infinite]" />}
                       </div>
