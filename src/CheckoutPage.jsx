@@ -1291,9 +1291,8 @@ export default function CheckoutPage() {
                           required
                         />
                         </div>
-                      ))}
                       </div>
-                      )}
+                    </div>
                       <button
                     type="submit"
                     disabled={!autopayData.accountNumber || !autopayData.ifsc || !autopayData.accountName}
