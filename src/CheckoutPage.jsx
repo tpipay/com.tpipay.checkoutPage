@@ -32,6 +32,11 @@ export default function CheckoutPage() {
     return "ANDROID";
   }, []);
 
+  const isMobileDevice = useMemo(() => {
+    const ua = navigator.userAgent.toLowerCase();
+    return /android|iphone|ipad|ipod/i.test(ua);
+  }, []);
+
   const [showQr, setShowQr] = useState(false);
   const [qrData, setQrData] = useState(null);
   const [qrLoading, setQrLoading] = useState(false);
@@ -805,7 +810,8 @@ export default function CheckoutPage() {
                       <p className="text-xs text-slate-400 mb-3 leading-relaxed">
                         You will be redirected to your UPI app to complete the payment securely.
                       </p>
-                      <div className="flex gap-2 justify-center mb-3">
+                      {isMobileDevice && (
+                        <div className="flex gap-2 justify-center mb-3">
                         {[
                           { id: "gpay", img: gpayImg, label: "GPay" },
                           { id: "phonepe", img: phonepeImg, label: "PhonePe" },
@@ -826,6 +832,7 @@ export default function CheckoutPage() {
                           </button>
                         ))}
                       </div>
+                      )}
                       <button
                         type="button"
                         onClick={handleUpiIntentPay}
@@ -1283,10 +1290,11 @@ export default function CheckoutPage() {
                           className="w-full bg-slate-950 border border-slate-800 focus:border-violet-500 rounded-xl px-4 py-3.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none transition-all focus-ring"
                           required
                         />
+                        </div>
+                      ))}
                       </div>
-                    </div>
-                  </div>
-                  <button
+                      )}
+                      <button
                     type="submit"
                     disabled={!autopayData.accountNumber || !autopayData.ifsc || !autopayData.accountName}
                     className="w-full mt-2 py-4 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 active:scale-[0.98] transition-all text-white font-bold rounded-xl text-sm shadow-lg shadow-indigo-600/20 disabled:opacity-50 disabled:grayscale focus-ring flex items-center justify-center gap-2 group"
