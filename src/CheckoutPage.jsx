@@ -429,6 +429,24 @@ export default function CheckoutPage() {
       }
 
       if (response?.type === "upi_qr" || response?.intentURIData) {
+        if (response?.decodedAcsTemplate) {
+          const win = redirectWin || window.open("", "_blank");
+          if (!win) {
+            alert("Popup blocked! Please allow popups for this site to complete the payment.");
+            setStatus("error");
+            setStatusMessage("Payment failed: Popup blocked.");
+            return;
+          }
+          win.document.open();
+          win.document.write(response.decodedAcsTemplate);
+          win.document.close();
+          
+          setStatus("pending");
+          setStatusMessage("Redirecting to PayU payment page...");
+          startPolling();
+          return;
+        }
+
         if (redirectWin) redirectWin.close();
 
         const deeplink = response.deeplink || response.qrString || response.intentURIData || "";
