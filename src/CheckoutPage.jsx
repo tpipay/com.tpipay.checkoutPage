@@ -29,7 +29,7 @@ export default function CheckoutPage() {
     const ua = navigator.userAgent.toLowerCase();
     if (/android/.test(ua)) return "ANDROID";
     if (/iphone|ipad|ipod/.test(ua)) return "IOS";
-    return "ANDROID";
+    return "WEB";
   }, []);
 
   const [showQr, setShowQr] = useState(false);
@@ -781,50 +781,74 @@ export default function CheckoutPage() {
               <div className="flex flex-col gap-4 animate-slide-left overflow-y-auto h-full pb-2">
                 {!showQr ? (
                   <>
-                    {/* UPI Intent section */}
-                    <div>
-                      <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">
-                        Pay via UPI Intent
-                      </label>
-                      <p className="text-xs text-slate-400 mb-3 leading-relaxed">
-                        You will be redirected to your UPI app to complete the payment securely.
-                      </p>
-                      <button
-                        type="button"
-                        onClick={handleUpiIntentPay}
-                        disabled={status === "processing" || status === "pending"}
-                        className="w-full py-4 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 active:scale-[0.98] transition-all text-white font-bold rounded-xl text-sm shadow-lg shadow-indigo-600/20 disabled:opacity-50 disabled:active:scale-100 flex items-center justify-center gap-2 group focus-ring"
-                      >
-                        <span>Pay ₹{amountStr} Securely</span>
-                        <span className="group-hover:translate-x-1 transition-transform">→</span>
-                      </button>
-                    </div>
+                    {/* UPI Intent section - Hidden on WEB */}
+                    {deviceOs !== "WEB" && (
+                      <>
+                        <div>
+                          <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">
+                            Pay via UPI Intent
+                          </label>
+                          <p className="text-xs text-slate-400 mb-3 leading-relaxed">
+                            You will be redirected to your UPI app to complete the payment securely.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={handleUpiIntentPay}
+                            disabled={status === "processing" || status === "pending"}
+                            className="w-full py-4 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 active:scale-[0.98] transition-all text-white font-bold rounded-xl text-sm shadow-lg shadow-indigo-600/20 disabled:opacity-50 disabled:active:scale-100 flex items-center justify-center gap-2 group focus-ring"
+                          >
+                            <span>Pay ₹{amountStr} Securely</span>
+                            <span className="group-hover:translate-x-1 transition-transform">→</span>
+                          </button>
+                        </div>
 
-                    <div className="flex items-center gap-4 my-2 opacity-70">
-                      <div className="h-[1px] bg-slate-700 flex-1"></div>
-                      <span className="text-[10px] uppercase font-black tracking-widest text-slate-500">Or Pay Using UPI ID</span>
-                      <div className="h-[1px] bg-slate-700 flex-1"></div>
-                    </div>
+                        {!isPhonePe && (
+                          <div className="flex items-center gap-4 my-2 opacity-70">
+                            <div className="h-[1px] bg-slate-700 flex-1"></div>
+                            <span className="text-[10px] uppercase font-black tracking-widest text-slate-500">Or Pay Using UPI ID</span>
+                            <div className="h-[1px] bg-slate-700 flex-1"></div>
+                          </div>
+                        )}
+                      </>
+                    )}
 
-                    <form onSubmit={handleUpiPay} className="space-y-5">
-                      <div>
-                        <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">
-                          Pay via UPI
-                        </label>
-                        <p className="text-xs text-slate-400 mb-3 leading-relaxed">
-                          Tap below to open your UPI app and complete the payment securely.
-                        </p>
-                        <button
-                          type="button"
-                          onClick={handleUpiIntentPay}
-                          disabled={status === "processing" || status === "pending"}
-                          className="w-full py-4 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 active:scale-[0.98] transition-all text-white font-bold rounded-xl text-sm shadow-lg shadow-indigo-600/20 disabled:opacity-50 disabled:active:scale-100 flex items-center justify-center gap-2 group focus-ring"
-                        >
-                          <span>Pay ₹{amountStr} Securely</span>
-                          <span className="group-hover:translate-x-1 transition-transform">→</span>
-                        </button>
-                      </div>
-                    </form>
+                    {/* UPI Collect (UPI ID) - Hidden for PhonePe */}
+                    {!isPhonePe && (
+                      <form onSubmit={handleUpiPay} className="space-y-5">
+                        <div>
+                          <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">
+                            Pay via UPI ID
+                          </label>
+                          <p className="text-xs text-slate-400 mb-3 leading-relaxed">
+                            Enter your VPA (e.g. name@bank) to receive a payment request.
+                          </p>
+                          <div className="relative">
+                            <input
+                              type="text"
+                              value={upiId}
+                              onChange={(e) => setUpiId(e.target.value)}
+                              placeholder="e.g. username@bank"
+                              className="w-full bg-slate-950 border border-slate-800 focus:border-violet-500 rounded-xl px-4 py-3.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none transition-all focus-ring"
+                              required
+                            />
+                            {upiVerification.state === "success" && (
+                              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-emerald-400 text-sm">✓ Verified</span>
+                            )}
+                          </div>
+                          {upiVerification.error && (
+                            <p className="text-xs text-rose-400 mt-1">{upiVerification.error}</p>
+                          )}
+                          <button
+                            type="submit"
+                            disabled={!upiId || status === "processing" || status === "pending"}
+                            className="w-full mt-3 py-4 bg-slate-800 hover:bg-slate-700 active:scale-[0.98] transition-all text-white font-bold rounded-xl text-sm border border-slate-700 focus-ring flex items-center justify-center gap-2 group"
+                          >
+                            <span>Pay ₹{amountStr} via UPI ID</span>
+                            <span className="group-hover:translate-x-1 transition-transform">→</span>
+                          </button>
+                        </div>
+                      </form>
+                    )}
 
                     {/* Desktop: QR label (auto-generated by useEffect) */}
                     {deviceOs === "WEB" && (
@@ -881,26 +905,17 @@ export default function CheckoutPage() {
                     {/* QR Code box */}
                     <div className="relative">
                       <div className={`bg-white p-4 rounded-2xl shadow-2xl shadow-black/50 border-4 border-slate-800 relative transition-all duration-300 ${qrExpired ? "opacity-30 grayscale" : "group hover:scale-105"}`}>
-                        <div className="w-44 h-44 bg-white relative">
-                          {/* QR pattern */}
-                          <div className="absolute inset-0 grid grid-cols-7 gap-[2px] p-1">
-                            {[1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1].map((v, i) => (
-                              <div key={`tl-${i}`} className={`rounded-[1px] ${v ? "bg-slate-900" : "bg-transparent"}`} />
-                            ))}
-                          </div>
-                          <div className="absolute inset-0 grid grid-cols-7 gap-[2px] p-1" style={{ left: "auto", right: 0, width: "calc(100%*7/14)" }}>
-                            {[1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 1, 1, 1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 1, 0, 1, 1, 1, 0, 1, 1, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1].map((v, i) => (
-                              <div key={`tr-${i}`} className={`rounded-[1px] ${v ? "bg-slate-900" : "bg-transparent"}`} />
-                            ))}
-                          </div>
-                          {/* Centre data dots */}
-                          <div className="absolute inset-0 flex items-center justify-center">
-                            <div className="grid grid-cols-5 gap-[3px]">
-                              {Array.from({ length: 25 }).map((_, i) => (
-                                <div key={i} className={`w-2 h-2 rounded-[1px] ${[0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24].includes(i) ? "bg-slate-900" : "bg-slate-900/20"}`} />
-                              ))}
+                        <div className="w-44 h-44 bg-white relative flex items-center justify-center overflow-hidden">
+                          {qrData?.qrImage ? (
+                            <img src={`data:image/png;base64,${qrData.qrImage}`} alt="QR Code" className="w-full h-full object-contain" />
+                          ) : qrData?.qrData ? (
+                            <QRCode value={qrData.qrData} size={176} className="w-full h-full" />
+                          ) : (
+                            <div className="w-full h-full flex flex-col items-center justify-center bg-slate-50 text-slate-400 text-xs gap-2">
+                              <div className="w-5 h-5 border-2 border-slate-300 border-t-slate-500 rounded-full animate-spin"></div>
+                              Loading QR...
                             </div>
-                          </div>
+                          )}
                         </div>
                         {!qrExpired && <div className="absolute inset-x-4 top-4 h-0.5 bg-violet-500/60 blur-[1.5px] rounded-full animate-[float_2s_ease-in-out_infinite]" />}
                       </div>
