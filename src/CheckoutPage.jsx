@@ -616,13 +616,15 @@ export default function CheckoutPage() {
                     Copy
                   </button>
                 )}
-                <button
-                  type="button"
-                  onClick={() => { window.location.href = intentUrl; }}
-                  className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 active:scale-[0.98] transition-all text-white font-bold rounded-xl text-sm border border-slate-700 focus-ring"
-                >
-                  Launch UPI App
-                </button>
+                {deviceOs !== "WEB" && (
+                  <button
+                    type="button"
+                    onClick={() => { window.location.href = intentUrl; }}
+                    className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 active:scale-[0.98] transition-all text-white font-bold rounded-xl text-sm border border-slate-700 focus-ring"
+                  >
+                    Launch UPI App
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setIntentUrl(null)}
