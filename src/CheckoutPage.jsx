@@ -371,7 +371,7 @@ export default function CheckoutPage() {
     }
     submitPayment({
       access_key: accessKey,
-      payment_mode: "CC",
+      payment_mode: "CARD",
       card_number: cleanCard,
       card_holder_name: cardData.name || "Customer",
       card_expiry_date: cardData.expiry,
@@ -384,7 +384,7 @@ export default function CheckoutPage() {
     if (!selectedBank) return;
     const payload = {
       access_key: accessKey,
-      payment_mode: "NB",
+      payment_mode: "NET_BANKING",
       bank_code: selectedBank,
     };
     if (selectedBank === "OTHER") {
@@ -442,7 +442,7 @@ export default function CheckoutPage() {
           win.document.close();
           
           setStatus("pending");
-          setStatusMessage("Redirecting to PayU payment page...");
+          setStatusMessage("Redirecting to secure payment page...");
           startPolling();
           return;
         }
@@ -494,7 +494,7 @@ export default function CheckoutPage() {
           form.submit();
         }
         setStatus("pending");
-        setStatusMessage("Redirecting to PayU payment page...");
+        setStatusMessage("Redirecting to secure payment page...");
         startPolling();
         return;
       }
