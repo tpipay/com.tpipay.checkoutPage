@@ -67,6 +67,14 @@ export default function CheckoutPage() {
     return /android|iphone|ipad|ipod/i.test(ua);
   }, []);
 
+  const isMobile = useMemo(() => {
+    const ua = navigator.userAgent.toLowerCase();
+    const fromUA = /android|iphone|ipad|ipod|mobile|tablet/i.test(ua);
+    const fromTouch = 'ontouchstart' in window;
+    const fromWidth = window.innerWidth < 768;
+    return fromUA || (fromTouch && fromWidth);
+  }, []);
+
   const [showQr, setShowQr] = useState(false);
   const [qrData, setQrData] = useState(null);
   const [qrLoading, setQrLoading] = useState(false);
@@ -887,7 +895,7 @@ export default function CheckoutPage() {
                 {!showQr ? (
                   <>
                     {/* ── UPI Intent section ─────────────────────────── */}
-                    {deviceOs !== "WEB" && (
+                    {isMobile && (
                       <div>
                         <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">
                           Pay via UPI Intent
@@ -935,7 +943,7 @@ export default function CheckoutPage() {
                     {/* PayU:    QR is secondary — show after a divider       */}
                     {isPhonePe ? (
                       /* PhonePe — QR is for desktop only */
-                      deviceOs === "WEB" && (
+                      !isMobile && (
                       <div>
                         <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">
                           Pay via UPI QR
@@ -960,7 +968,7 @@ export default function CheckoutPage() {
                       )
                     ) : (
                       /* PayU — QR is secondary option, shown after intent */
-                      deviceOs === "WEB" && (
+                      !isMobile && (
                         <>
                           {/* Divider */}
                           <div className="flex items-center gap-4 my-1 opacity-70">
