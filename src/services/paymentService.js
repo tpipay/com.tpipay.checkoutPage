@@ -117,22 +117,18 @@ export async function generateQrCode(accessKey, sessionData) {
     let payload;
     if (isPhonePe) {
       payload = {
-        access_key: accessKey,
+        merchantOrderId: sessionData?.orderId || accessKey,
         amount: sessionData?.amount,
+        expireAfter: 1200,
         metaInfo: {
           udf1: accessKey,
           udf2: sessionData?.orderId || accessKey
         },
-        deviceContext: {
-          deviceOS: "WEB"
-        },
-        expireAfter: 1200,
-        merchantOrderId: sessionData?.orderId || accessKey,
         paymentFlow: {
+          type: "PG",
           paymentMode: {
             type: "UPI_QR"
-          },
-          type: "PG"
+          }
         }
       };
     } else {
