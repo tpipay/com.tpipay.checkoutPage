@@ -113,14 +113,37 @@ export async function verifyUpiId(upiId, accessKey) {
 export async function generateQrCode(accessKey, sessionData) {
   try {
     const isPhonePe = String(sessionData?.gateway || sessionData?.gateway_name || sessionData?.pg_name || sessionData?.merchant_name || "").toLowerCase().includes("phonepe");
-    const payload = {
-      access_key: accessKey,
-      payment_mode: "UPI",
-      request_mode: "4",
-      device_os: "WEB",
-      ...(isPhonePe && { deviceContext: { deviceOS: "WEB" } })
-    };
-    
+
+    let payload;
+    if (isPhonePe) {
+      payload = {
+        access_key: accessKey,
+        amount: sessionData?.amount,
+        metaInfo: {
+          udf1: accessKey,
+          udf2: sessionData?.orderId || accessKey
+        },
+        deviceContext: {
+          deviceOS: "WEB"
+        },
+        expireAfter: 1200,
+        merchantOrderId: sessionData?.orderId || accessKey,
+        paymentFlow: {
+          paymentMode: {
+            type: "UPI_QR"
+          },
+          type: "PG"
+        }
+      };
+    } else {
+      payload = {
+        access_key: accessKey,
+        payment_mode: "UPI",
+        request_mode: "4",
+        device_os: "WEB"
+      };
+    }
+
     const response = await fetch(`${API_BASE_URL}/api/payment/pay`, {
       method: "POST",
       headers: {
@@ -135,7 +158,7 @@ export async function generateQrCode(accessKey, sessionData) {
     }
 
     const data = await response.json();
-    
+
     let finalQrData = "";
     if (data?.deeplink) {
       finalQrData = data.deeplink;

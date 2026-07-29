@@ -920,6 +920,10 @@ export default function CheckoutPage() {
                 {!showQr ? (
                   <>
                     {/* ── UPI Intent section ─────────────────────────── */}
+                    {/* PhonePe desktop: skip intent, show QR only         */}
+                    {/* PhonePe mobile: show intent only                   */}
+                    {/* PayU:           show intent always                 */}
+                    {!(isPhonePe && !isMobileDevice) && (
                     <div className="block">
                       <div>
                         <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">
@@ -962,6 +966,7 @@ export default function CheckoutPage() {
                         </button>
                       </div>
                     </div>
+                    )}
 
                     {/* ── QR section ─────────────────────────────────────── */}
                     {/* PhonePe: QR is shown only on desktop                  */}
