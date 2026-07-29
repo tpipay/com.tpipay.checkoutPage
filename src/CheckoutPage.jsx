@@ -887,7 +887,7 @@ export default function CheckoutPage() {
                 {!showQr ? (
                   <>
                     {/* ── UPI Intent section ─────────────────────────── */}
-                    {(!isPhonePe || (isPhonePe && isMobileDevice)) && (
+                    {deviceOs !== "WEB" && (
                       <div>
                         <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">
                           Pay via UPI Intent
@@ -935,7 +935,7 @@ export default function CheckoutPage() {
                     {/* PayU:    QR is secondary — show after a divider       */}
                     {isPhonePe ? (
                       /* PhonePe — QR is for desktop only */
-                      !isMobileDevice && (
+                      deviceOs === "WEB" && (
                       <div>
                         <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">
                           Pay via UPI QR
@@ -960,7 +960,7 @@ export default function CheckoutPage() {
                       )
                     ) : (
                       /* PayU — QR is secondary option, shown after intent */
-                      deviceOs !== "iOS" && (
+                      deviceOs === "WEB" && (
                         <>
                           {/* Divider */}
                           <div className="flex items-center gap-4 my-1 opacity-70">
@@ -968,16 +968,14 @@ export default function CheckoutPage() {
                             <span className="text-[10px] uppercase font-black tracking-widest text-slate-500">Or Pay Via QR</span>
                             <div className="h-[1px] bg-slate-700 flex-1"></div>
                           </div>
-                          {deviceOs === "WEB" && (
-                            <div>
-                              <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">
-                                Pay via UPI QR
-                              </label>
-                              <p className="text-xs text-slate-400 mb-3 leading-relaxed">
-                                Scan the QR code with any UPI app — PhonePe, GPay, or Paytm — to complete the payment.
-                              </p>
-                            </div>
-                          )}
+                          <div>
+                            <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">
+                              Pay via UPI QR
+                            </label>
+                            <p className="text-xs text-slate-400 mb-3 leading-relaxed">
+                              Scan the QR code with any UPI app — PhonePe, GPay, or Paytm — to complete the payment.
+                            </p>
+                          </div>
                           <button
                             type="button"
                             onClick={handleGenerateQr}
