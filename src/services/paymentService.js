@@ -112,11 +112,13 @@ export async function verifyUpiId(upiId, accessKey) {
  */
 export async function generateQrCode(accessKey, sessionData) {
   try {
+    const isPhonePe = String(sessionData?.gateway || sessionData?.gateway_name || sessionData?.pg_name || sessionData?.merchant_name || "").toLowerCase().includes("phonepe");
     const payload = {
       access_key: accessKey,
       payment_mode: "UPI",
       request_mode: "4",
-      device_os: "WEB"
+      device_os: "WEB",
+      ...(isPhonePe && { deviceContext: { deviceOS: "WEB" } })
     };
     
     const response = await fetch(`${API_BASE_URL}/api/payment/pay`, {
