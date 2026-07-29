@@ -51,6 +51,19 @@ export default function CheckoutPage() {
   // Derive the active provider key used for all payment_mode lookups
   const activeProvider = isPhonePe ? "PhonePe" : "PayU";
 
+  const allowedPaymentModes = session?.allowedPaymentModes;
+  const singleMode = allowedPaymentModes?.length === 1 ? allowedPaymentModes[0].toUpperCase() : null;
+  const tabToModeMap = { upi: "UPI", netbanking: "NET_BANKING", cards: "CARD", autopay: "AUTOPAY" };
+  const allTabs = [
+    { id: "upi", icon: "⚡", label: "UPI" },
+    { id: "netbanking", icon: "🏦", label: "Bank" },
+    { id: "cards", icon: "💳", label: "Card" },
+    { id: "autopay", icon: "🔄", label: "AutoPay" }
+  ];
+  const visibleTabs = allowedPaymentModes
+    ? allTabs.filter(t => allowedPaymentModes.map(m => m.toUpperCase()).includes(tabToModeMap[t.id]))
+    : allTabs;
+
   // Payment form states
   const [upiId, setUpiId] = useState("");
   const [upiVerification, setUpiVerification] = useState({ state: "idle", name: null, error: null }); // idle | loading | success | error
@@ -184,6 +197,15 @@ export default function CheckoutPage() {
         const response = await fetchSession(accessKey);
         if (response?.data) {
           setSession(response.data);
+          const modes = response.data?.allowedPaymentModes;
+          const modeTabMap = { UPI: "upi", CARD: "cards", NET_BANKING: "netbanking", AUTOPAY: "autopay" };
+          if (modes?.length === 1) {
+            setActiveTab(modeTabMap[modes[0].toUpperCase()] || "upi");
+            setShowQr(false);
+          } else if (modes?.length > 1) {
+            const firstTab = modeTabMap[modes[0].toUpperCase()];
+            if (firstTab) setActiveTab(firstTab);
+          }
           if (!response.data.sessionExpiresAt) {
             response.data.sessionExpiresAt = defaultExpiresAt.current;
           }
@@ -860,31 +882,34 @@ export default function CheckoutPage() {
             </div>
           )}
 
-          <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-5">
-            Select Payment Method
-          </h3>
+          {singleMode ? (
+            <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-5">
+              Pay via {singleMode === 'UPI' ? 'UPI' : singleMode === 'CARD' ? 'Card' : singleMode === 'NET_BANKING' ? 'Net Banking' : 'AutoPay'}
+            </h3>
+          ) : (
+            <>
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-5">
+                Select Payment Method
+              </h3>
 
-          {/* MODERN PILL TAB SELECTORS */}
-          <div className="flex gap-1.5 p-1.5 bg-slate-950/60 rounded-2xl border border-slate-800/50 mb-4 overflow-x-auto scrollbar-none">
-            {[
-              { id: "upi", icon: "⚡", label: "UPI" },
-              { id: "netbanking", icon: "🏦", label: "Bank" },
-              { id: "cards", icon: "💳", label: "Card" },
-              { id: "autopay", icon: "🔄", label: "AutoPay" }
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => { setActiveTab(tab.id); setShowQr(false); }}
-                className={`flex-1 py-2.5 px-2 flex items-center justify-center gap-1.5 text-[11px] font-bold rounded-xl transition-all duration-300 whitespace-nowrap ${activeTab === tab.id
-                  ? "bg-slate-800 text-white tab-pill-active"
-                  : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
-                  }`}
-              >
-                <span className="text-sm">{tab.icon}</span>
-                <span>{tab.label}</span>
-              </button>
-            ))}
-          </div>
+              {/* MODERN PILL TAB SELECTORS */}
+              <div className="flex gap-1.5 p-1.5 bg-slate-950/60 rounded-2xl border border-slate-800/50 mb-4 overflow-x-auto scrollbar-none">
+                {visibleTabs.map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => { setActiveTab(tab.id); setShowQr(false); }}
+                    className={`flex-1 py-2.5 px-2 flex items-center justify-center gap-1.5 text-[11px] font-bold rounded-xl transition-all duration-300 whitespace-nowrap ${activeTab === tab.id
+                      ? "bg-slate-800 text-white tab-pill-active"
+                      : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/50"
+                      }`}
+                  >
+                    <span className="text-sm">{tab.icon}</span>
+                    <span>{tab.label}</span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
 
           {/* TAB CONTENTS */}
           <div className="flex-1 flex flex-col min-h-0">
