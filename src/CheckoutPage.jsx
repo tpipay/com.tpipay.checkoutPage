@@ -58,8 +58,8 @@ export default function CheckoutPage() {
   const deviceOs = useMemo(() => {
     const ua = navigator.userAgent.toLowerCase();
     if (/android/.test(ua)) return "ANDROID";
-    if (/iphone|ipad|ipod/.test(ua)) return "IOS";
-    return "ANDROID";
+    if (/iphone|ipad|ipod/.test(ua)) return "iOS";
+    return "WEB";
   }, []);
 
   const isMobileDevice = useMemo(() => {
@@ -280,10 +280,16 @@ export default function CheckoutPage() {
       ? (PAYU_UPI_APP_BANKCODE[selectedUpiApp] ?? PAYU_UPI_APP_BANKCODE.default)
       : undefined;
 
+    // Preserve the original device_os payload behavior for backward compatibility
+    let legacyDeviceOs = deviceOs;
+    if (deviceOs === "WEB") legacyDeviceOs = "ANDROID";
+    else if (deviceOs === "iOS" && !isPhonePe) legacyDeviceOs = "IOS";
+
     submitPayment({
       access_key: accessKey,
       payment_mode: PROVIDER_METHOD_MAPPING[activeProvider].UPI,
-      device_os: isPhonePe && deviceOs === "IOS" ? "iOS" : deviceOs,
+      device_os: legacyDeviceOs,
+      ...(isPhonePe && { deviceContext: { deviceOS: deviceOs } }),
       // PayU: bank_code drives which UPI app/flow is used on the backend
       ...(!isPhonePe && { bank_code: payuBankCode }),
       // PayU: upi_app_name is an optional tracking param recommended by PayU docs
@@ -861,8 +867,8 @@ export default function CheckoutPage() {
               <div className="flex flex-col gap-4 animate-slide-left overflow-y-auto h-full pb-2">
                 {!showQr ? (
                   <>
-                    {/* ── UPI Intent section (PayU only) ─────────────────── */}
-                    {!isPhonePe && (
+                    {/* ── UPI Intent section ─────────────────────────── */}
+                    {(!isPhonePe || (isPhonePe && isMobileDevice)) && (
                       <div>
                         <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">
                           Pay via UPI Intent
@@ -906,10 +912,11 @@ export default function CheckoutPage() {
                     )}
 
                     {/* ── QR section ─────────────────────────────────────── */}
-                    {/* PhonePe: QR is the only option — show label directly  */}
-                    {/* PayU:    QR is secondary — show after a divider        */}
+                    {/* PhonePe: QR is shown only on desktop                  */}
+                    {/* PayU:    QR is secondary — show after a divider       */}
                     {isPhonePe ? (
-                      /* PhonePe — QR is primary, show immediately */
+                      /* PhonePe — QR is for desktop only */
+                      !isMobileDevice && (
                       <div>
                         <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">
                           Pay via UPI QR
@@ -928,9 +935,9 @@ export default function CheckoutPage() {
                           ) : (
                             <span className="text-xl">📷</span>
                           )}
-                          Generate QR Code
                         </button>
                       </div>
+                      )
                     ) : (
                       /* PayU — QR is secondary option, shown after intent */
                       deviceOs !== "IOS" && (
