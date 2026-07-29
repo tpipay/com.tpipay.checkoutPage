@@ -280,16 +280,20 @@ export default function CheckoutPage() {
       ? (PAYU_UPI_APP_BANKCODE[selectedUpiApp] ?? PAYU_UPI_APP_BANKCODE.default)
       : undefined;
 
-    // Preserve the original device_os payload behavior for backward compatibility
-    let legacyDeviceOs = deviceOs;
-    if (deviceOs === "WEB") legacyDeviceOs = "ANDROID";
-    else if (deviceOs === "iOS" && !isPhonePe) legacyDeviceOs = "IOS";
+    // For PhonePe: send device_os directly ("ANDROID" / "iOS" / "WEB").
+    // The backend reads request.getDeviceOs() which maps to the `device_os` field.
+    // For PayU/legacy: keep the old casing ("IOS" / "ANDROID") for backward compat.
+    let resolvedDeviceOs = deviceOs;
+    if (!isPhonePe) {
+      // PayU legacy casing
+      if (deviceOs === "WEB") resolvedDeviceOs = "ANDROID";
+      else if (deviceOs === "iOS") resolvedDeviceOs = "IOS";
+    }
 
     submitPayment({
       access_key: accessKey,
       payment_mode: PROVIDER_METHOD_MAPPING[activeProvider].UPI,
-      device_os: legacyDeviceOs,
-      ...(isPhonePe && { deviceContext: { deviceOS: deviceOs } }),
+      device_os: resolvedDeviceOs,
       // PayU: bank_code drives which UPI app/flow is used on the backend
       ...(!isPhonePe && { bank_code: payuBankCode }),
       // PayU: upi_app_name is an optional tracking param recommended by PayU docs
@@ -499,13 +503,24 @@ export default function CheckoutPage() {
         const deeplink = response.deeplink || response.qrString || response.intentURIData || "";
         const acsTemplate = response.acsTemplate || "";
 
+        // PhonePe mobile intent: launch the deeplink and start polling.
+        // Do NOT show QR — QR is for desktop only in the PhonePe flow.
+        if (isPhonePe && isMobileDevice && deeplink) {
+          window.location.href = deeplink;
+          setStatus("pending");
+          setStatusMessage("Opening PhonePe app...");
+          startPolling();
+          return;
+        }
+
         setQrData({
           qrData: deeplink,
           acsTemplate: acsTemplate,
           expiresAt: Date.now() + 15 * 60 * 1000,
         });
 
-        if (/android|iphone|ipad|ipod/i.test(navigator.userAgent) && deeplink) {
+        // PayU / non-PhonePe mobile: launch intent but also show QR as fallback.
+        if (!isPhonePe && /android|iphone|ipad|ipod/i.test(navigator.userAgent) && deeplink) {
           window.location.href = deeplink;
         }
         setShowQr(true);
@@ -935,12 +950,13 @@ export default function CheckoutPage() {
                           ) : (
                             <span className="text-xl">📷</span>
                           )}
+                          Generate QR Code
                         </button>
                       </div>
                       )
                     ) : (
                       /* PayU — QR is secondary option, shown after intent */
-                      deviceOs !== "IOS" && (
+                      deviceOs !== "iOS" && (
                         <>
                           {/* Divider */}
                           <div className="flex items-center gap-4 my-1 opacity-70">
