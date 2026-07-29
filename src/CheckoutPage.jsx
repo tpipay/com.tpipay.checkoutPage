@@ -973,7 +973,7 @@ export default function CheckoutPage() {
                     {/* PayU:    QR is secondary — show after a divider       */}
                     {isPhonePe ? (
                       /* PhonePe — QR is for desktop only */
-                      <div className="hidden md:block">
+                      <div className={!isMobileDevice ? "block" : "hidden"}>
                         <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">
                           Pay via UPI QR
                         </label>
