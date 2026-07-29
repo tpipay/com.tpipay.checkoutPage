@@ -294,6 +294,10 @@ export default function CheckoutPage() {
       access_key: accessKey,
       payment_mode: PROVIDER_METHOD_MAPPING[activeProvider].UPI,
       device_os: resolvedDeviceOs,
+      // PhonePe: send deviceContext.deviceOS so the backend detects mobile and returns an intent URL.
+      // The backend maps request.getDeviceOs() to device_os but also requires deviceContext.deviceOS
+      // to differentiate intent (mobile) from QR (desktop) in the PhonePe API response.
+      ...(isPhonePe && { deviceContext: { deviceOS: deviceOs } }),
       // PayU: bank_code drives which UPI app/flow is used on the backend
       ...(!isPhonePe && { bank_code: payuBankCode }),
       // PayU: upi_app_name is an optional tracking param recommended by PayU docs
@@ -500,7 +504,7 @@ export default function CheckoutPage() {
 
         if (redirectWin) redirectWin.close();
 
-        const deeplink = response.deeplink || response.qrString || response.intentURIData || "";
+        const deeplink = response.deeplink || response.qrString || response.intentURIData || response.intentUrl || "";
         const acsTemplate = response.acsTemplate || "";
 
         // PhonePe mobile intent: launch the deeplink and start polling.
