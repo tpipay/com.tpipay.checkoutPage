@@ -1046,7 +1046,11 @@ export default function CheckoutPage() {
                       <div className={`bg-white p-4 rounded-2xl shadow-2xl shadow-black/50 border-4 border-slate-800 relative transition-all duration-300 ${qrExpired ? "opacity-30 grayscale" : "group hover:scale-105"}`}>
                         <div className="w-44 h-44 bg-white flex items-center justify-center">
                           {qrData?.qrData ? (
-                            <QRCode value={qrData.qrData} size={160} />
+                            typeof qrData.qrData === 'string' && qrData.qrData.startsWith("upi://") ? (
+                              <QRCode value={qrData.qrData} size={160} />
+                            ) : (
+                              <img src={`data:image/png;base64,${qrData.qrData}`} alt="UPI QR Code" className="w-[160px] h-[160px] object-contain" />
+                            )
                           ) : (
                             <span className="text-xs text-slate-400">No QR data</span>
                           )}

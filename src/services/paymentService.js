@@ -125,7 +125,15 @@ export async function generateQrCode(accessKey, sessionData) {
           udf1: accessKey,
           udf2: sessionData?.orderId || accessKey
         },
-        paymentMode: "UPI_QR"
+        deviceContext: {
+          deviceOS: "WEB"
+        },
+        paymentFlow: {
+          type: "PG",
+          paymentMode: {
+            type: "UPI_QR"
+          }
+        }
       };
     } else {
       payload = {
@@ -160,6 +168,8 @@ export async function generateQrCode(accessKey, sessionData) {
       finalQrData = data.data.instrumentResponse.qrData;
     } else if (data?.data?.instrumentResponse?.intentUrl) {
       finalQrData = data.data.instrumentResponse.intentUrl;
+    } else if (data?.data?.qrData) {
+      finalQrData = data.data.qrData;
     } else if (data?.qrData) {
       finalQrData = data.qrData;
     } else if (data?.intentURIData) {
