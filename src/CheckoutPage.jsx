@@ -356,12 +356,11 @@ export default function CheckoutPage() {
   };
 
   const handleGenerateQr = async () => {
-    if (qrData && !qrExpired) {
-      setShowQr(true);
-      startPolling();
-      return;
-    }
-
+    // Always generate a brand-new QR. Never reuse a previously generated QR,
+    // even if it has not expired. Stop any polling for the previous transaction.
+    if (pollingInterval.current) clearInterval(pollingInterval.current);
+    if (qrTimerRef.current) clearInterval(qrTimerRef.current);
+    setQrData(null);
     setQrLoading(true);
     setQrError(null);
     setQrExpired(false);
