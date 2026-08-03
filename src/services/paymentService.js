@@ -114,26 +114,16 @@ export async function generateQrCode(accessKey, sessionData) {
   try {
     const isPhonePe = String(sessionData?.gateway || sessionData?.gateway_name || sessionData?.pg_name || sessionData?.merchant_name || "").toLowerCase().includes("phonepe");
 
+    // The backend POST /api/payment/pay requires a flat `payment_mode` string
+    // (PaymentPayRequest validates it via @NotNull). It is the backend that
+    // builds the nested PhonePe `paymentFlow.paymentMode` when forwarding to
+    // PhonePe, so never send that nested shape to /api/payment/pay here.
     let payload;
     if (isPhonePe) {
       payload = {
         access_key: accessKey,
-        merchantOrderId: sessionData?.orderId || accessKey,
-        amount: sessionData?.amount,
-        expireAfter: 1200,
-        metaInfo: {
-          udf1: accessKey,
-          udf2: sessionData?.orderId || accessKey
-        },
-        deviceContext: {
-          deviceOS: "WEB"
-        },
-        paymentFlow: {
-          type: "PG",
-          paymentMode: {
-            type: "UPI_QR"
-          }
-        }
+        payment_mode: "UPI_QR",
+        device_os: "WEB",
       };
     } else {
       payload = {
