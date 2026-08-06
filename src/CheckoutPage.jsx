@@ -47,6 +47,14 @@ export default function CheckoutPage() {
   const [paymentResult, setPaymentResult] = useState(null);
   const [activeTab, setActiveTab] = useState("upi"); // upi | netbanking | cards
   const [sessionExpired, setSessionExpired] = useState(false);
+  // Environment flag: in production, payments must stay on the TPiPay checkout page
+  // (inline QR / UPI deeplink). The PayU hosted-page redirect is reserved for test env.
+  const envMode = import.meta.env.VITE_APP_ENV || "";
+  const hostname = typeof window !== "undefined" ? window.location.hostname : "";
+  const isProduction =
+    envMode === "production" ||
+    (!envMode && hostname && !/localhost|127\.0\.0\.1|test|staging|dev|preview/i.test(hostname));
+
   const isPhonePe = String(session?.gateway || session?.gateway_name || session?.pg_name || session?.merchant_name || "").toLowerCase().includes("phonepe");
   // Derive the active provider key used for all payment_mode lookups
   const activeProvider = isPhonePe ? "PhonePe" : "PayU";
@@ -514,7 +522,14 @@ export default function CheckoutPage() {
       }
 
       if (response?.type === "upi_qr" || response?.intentURIData) {
-        if (response?.decodedAcsTemplate) {
+        const deeplink = response.deeplink || response.qrString || response.intentURIData || response.intentUrl || "";
+        const acsTemplate = response.acsTemplate || "";
+
+        // PRODUCTION: keep payment on the TPiPay checkout page. Never redirect to the
+        // PayU hosted page (which shows the UPI app logos). Only fall back to the ACS
+        // template when the backend returns no usable UPI deeplink.
+        // TEST env: keep legacy behavior (redirect to PayU hosted page via ACS template).
+        if (response?.decodedAcsTemplate && (!isProduction || !deeplink)) {
           const win = redirectWin || window.open("", "_blank");
           if (!win) {
             alert("Popup blocked! Please allow popups for this site to complete the payment.");
@@ -533,9 +548,6 @@ export default function CheckoutPage() {
         }
 
         if (redirectWin) redirectWin.close();
-
-        const deeplink = response.deeplink || response.qrString || response.intentURIData || response.intentUrl || "";
-        const acsTemplate = response.acsTemplate || "";
 
         // PhonePe mobile intent: launch the deeplink and start polling.
         // Do NOT show QR — QR is for desktop only in the PhonePe flow.
