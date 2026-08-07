@@ -337,6 +337,26 @@ export default function CheckoutPage() {
     });
   };
 
+  // Pay directly through a specific UPI app on mobile (PayU only).
+  // Clicking an app icon initiates payment for that app, which opens the
+  // app directly via deeplink instead of redirecting to the PayU page.
+  // NOTE: Use the generic INTENT bankcode (the only UPI code enabled on this
+  // merchant account). App-specific codes (TEZ/PHONEPE/PAYTM) are NOT
+  // provisioned and return EX158. target_app is still passed so the backend
+  // builds an app-specific deeplink that opens the selected app.
+  const handleUpiAppIconPay = (appId) => {
+    if (isPhonePe) return; // PhonePe flow untouched
+    setSelectedUpiApp(appId);
+    submitPayment({
+      access_key: accessKey,
+      payment_mode: PROVIDER_METHOD_MAPPING[activeProvider].UPI,
+      device_os: deviceOs === "iOS" ? "IOS" : "ANDROID",
+      bank_code: "INTENT",
+      upi_app_name: appId,
+      target_app: appId,
+    });
+  };
+
   const handleUpiPay = async (e) => {
     e.preventDefault();
     if (!upiId) return;
@@ -513,7 +533,8 @@ export default function CheckoutPage() {
       }
 
       if (response?.type === "upi_qr" || response?.intentURIData) {
-        if (response?.decodedAcsTemplate) {
+        // PhonePe: keep the existing seamless-handler behaviour (unchanged).
+        if (isPhonePe && response?.decodedAcsTemplate) {
           const win = redirectWin || window.open("", "_blank");
           if (!win) {
             alert("Popup blocked! Please allow popups for this site to complete the payment.");
@@ -524,7 +545,7 @@ export default function CheckoutPage() {
           win.document.open();
           win.document.write(response.decodedAcsTemplate);
           win.document.close();
-          
+
           setStatus("pending");
           setStatusMessage("Redirecting to PayU payment page...");
           startPolling();
@@ -537,7 +558,6 @@ export default function CheckoutPage() {
         const acsTemplate = response.acsTemplate || "";
 
         // PhonePe mobile intent: launch the deeplink and start polling.
-        // Do NOT show QR — QR is for desktop only in the PhonePe flow.
         if (isPhonePe && isMobileDevice && deeplink) {
           window.location.href = deeplink;
           setStatus("pending");
@@ -546,16 +566,21 @@ export default function CheckoutPage() {
           return;
         }
 
+        // PayU mobile: open the selected UPI app directly via deeplink (no PayU page).
+        if (!isPhonePe && isMobileDevice && deeplink) {
+          window.location.href = deeplink;
+          setStatus("pending");
+          setStatusMessage("Opening UPI app...");
+          startPolling();
+          return;
+        }
+
+        // Web (desktop): show the QR only — never redirect to the PayU page.
         setQrData({
           qrData: deeplink,
           acsTemplate: acsTemplate,
           expiresAt: Date.now() + 15 * 60 * 1000,
         });
-
-        // PayU / non-PhonePe mobile: launch intent but also show QR as fallback.
-        if (!isPhonePe && /android|iphone|ipad|ipod/i.test(navigator.userAgent) && deeplink) {
-          window.location.href = deeplink;
-        }
         setShowQr(true);
         setStatus("pending");
         setStatusMessage("Scan QR code with UPI app to pay");
@@ -921,8 +946,9 @@ export default function CheckoutPage() {
                     {/* ── UPI Intent section ─────────────────────────── */}
                     {/* PhonePe desktop: skip intent, show QR only         */}
                     {/* PhonePe mobile: show intent only                   */}
-                    {/* PayU:           show intent always                 */}
-                    {!(isPhonePe && !isMobileDevice) && (
+                    {/* PayU web:        skip intent, show QR only         */}
+                    {/* PayU mobile:     show intent (app icons)           */}
+                    {!((isPhonePe || !isMobileDevice)) && (
                     <div className="block">
                       <div>
                         <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">
@@ -941,7 +967,16 @@ export default function CheckoutPage() {
                             <button
                               key={app.id}
                               type="button"
-                              onClick={() => setSelectedUpiApp(selectedUpiApp === app.id ? null : app.id)}
+                              onClick={() => {
+                                // PayU: tap the app icon to pay through that app directly.
+                                // PhonePe: only select the app (flow unchanged).
+                                if (isPhonePe) {
+                                  setSelectedUpiApp(selectedUpiApp === app.id ? null : app.id);
+                                } else {
+                                  handleUpiAppIconPay(app.id);
+                                }
+                              }}
+                              disabled={status === "processing" || status === "pending"}
                               className={`flex flex-col items-center gap-1 p-2 rounded-xl border-2 transition-all ${
                                 selectedUpiApp === app.id
                                   ? "border-violet-500 bg-violet-500/10"
@@ -994,14 +1029,8 @@ export default function CheckoutPage() {
                         </button>
                       </div>
                     ) : (
-                      /* PayU — QR is secondary option, shown after intent */
+                      /* PayU — QR is the primary option on web (intent hidden on web) */
                       <div className="hidden md:block">
-                        {/* Divider */}
-                        <div className="flex items-center gap-4 my-1 opacity-70">
-                          <div className="h-[1px] bg-slate-700 flex-1"></div>
-                          <span className="text-[10px] uppercase font-black tracking-widest text-slate-500">Or Pay Via QR</span>
-                          <div className="h-[1px] bg-slate-700 flex-1"></div>
-                        </div>
                         <div>
                           <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">
                             Pay via UPI QR
@@ -1014,10 +1043,10 @@ export default function CheckoutPage() {
                           type="button"
                           onClick={handleGenerateQr}
                           disabled={qrLoading}
-                          className="w-full py-4 bg-slate-950/80 hover:bg-slate-900 border border-slate-700 hover:border-violet-500/50 transition-all text-white font-bold rounded-xl text-sm flex items-center justify-center gap-3 focus-ring"
+                          className="w-full py-4 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 active:scale-[0.98] transition-all text-white font-bold rounded-xl text-sm shadow-lg shadow-indigo-600/20 disabled:opacity-50 disabled:active:scale-100 flex items-center justify-center gap-3 focus-ring"
                         >
                           {qrLoading ? (
-                            <div className="w-5 h-5 border-2 border-violet-500 border-t-transparent rounded-full animate-spin"></div>
+                            <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                           ) : (
                             <span className="text-xl">📷</span>
                           )}
