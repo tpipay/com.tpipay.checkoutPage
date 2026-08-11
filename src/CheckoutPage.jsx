@@ -98,6 +98,8 @@ export default function CheckoutPage() {
   const [selectedUpiApp, setSelectedUpiApp] = useState(null);
 
   const [autopayData, setAutopayData] = useState({ accountNumber: "", ifsc: "", accountName: "", bankName: "", maxAmount: "" });
+  const [autopayMethod, setAutopayMethod] = useState("enach"); // "enach" | "upi"
+  const [upiAutopayId, setUpiAutopayId] = useState("");
 
   const qrTimerRef = useRef(null);
 
@@ -418,6 +420,18 @@ export default function CheckoutPage() {
     });
   };
 
+  const handleUpiAutopaySubmit = (e) => {
+    e.preventDefault();
+    if (!upiAutopayId.trim()) return;
+    submitPayment({
+      access_key: accessKey,
+      payment_mode: "UPI_AUTOPAY",
+      upi_id: upiAutopayId.trim(),
+      device_os: deviceOs === "iOS" ? "IOS" : deviceOs === "WEB" ? "ANDROID" : deviceOs,
+      max_amount: autopayData.maxAmount || undefined,
+    });
+  };
+
   const formatQrTimer = (secs) => {
     const m = String(Math.floor(secs / 60)).padStart(2, "0");
     const s = String(secs % 60).padStart(2, "0");
@@ -509,7 +523,16 @@ export default function CheckoutPage() {
       const response = await processPayment(payload);
       setPaymentResult(response);
 
-      if (response?.type === "card_s2s" || response?.type === "nb_redirect") {
+      if (response?.type === "card_s2s" || response?.type === "nb_redirect" || response?.type === "enach_s2s") {
+        // eNACH (PayU) returns the bank auth for mandate registration the same way
+        // as a 3DS ACS template. otpPostUrl/bankAuthUrl are used when no template came back.
+        const isEnach = response?.type === "enach_s2s";
+        if (response?.status === "failed" || response?.error) {
+          if (redirectWin) redirectWin.close();
+          setStatus("failed");
+          setStatusMessage(response?.message || `PayU ${response?.error || "rejected the request"}`);
+          return;
+        }
         if (response?.acsTemplate) {
           try {
             if (redirectWin) {
@@ -523,16 +546,64 @@ export default function CheckoutPage() {
               return;
             }
           } catch (e) {
-            console.error("Failed to write ACS template:", e);
+            console.error("Failed to write ACS/bank auth template:", e);
+          }
+        } else if (response?.otpPostUrl || response?.bankAuthUrl) {
+          const bankUrl = response.otpPostUrl || response.bankAuthUrl;
+          if (redirectWin) {
+            redirectWin.location.href = bankUrl;
+          } else {
+            window.location.href = bankUrl;
           }
         }
         setStatus("pending");
-        setStatusMessage("Redirecting to bank for 3D Secure authentication...");
+        setStatusMessage(isEnach
+          ? "Redirecting to your bank to authorise your mandate..."
+          : "Redirecting to bank for 3D Secure authentication...");
         startPolling();
         return;
       }
 
-      if (response?.type === "upi_qr" || response?.intentURIData) {
+      if (response?.type === "autopay_redirect") {
+        if (response?.status === "failed" || response?.error) {
+          if (redirectWin) redirectWin.close();
+          setStatus("failed");
+          setStatusMessage(response?.message || `PayU ${response?.error || "rejected the request"}`);
+          return;
+        }
+
+        const actionUrl = response.action;
+        const fields = response.fields;
+
+        if (actionUrl && fields) {
+          const form = document.createElement("form");
+          form.method = "POST";
+          form.action = actionUrl;
+          
+          Object.keys(fields).forEach(key => {
+            const input = document.createElement("input");
+            input.type = "hidden";
+            input.name = key;
+            input.value = fields[key];
+            form.appendChild(input);
+          });
+          
+          if (redirectWin) {
+            redirectWin.document.body.appendChild(form);
+            redirectWin.document.forms[0].submit();
+          } else {
+            document.body.appendChild(form);
+            form.submit();
+          }
+          
+          setStatus("pending");
+          setStatusMessage("Redirecting to your bank to authorise your mandate...");
+          startPolling();
+          return;
+        }
+      }
+
+      if (response?.type === "upi_qr" || response?.type === "upi_autopay_s2s" || response?.intentURIData) {
         // PhonePe: keep the existing seamless-handler behaviour (unchanged).
         if (isPhonePe && response?.decodedAcsTemplate) {
           const win = redirectWin || window.open("", "_blank");
@@ -556,12 +627,13 @@ export default function CheckoutPage() {
 
         const deeplink = response.deeplink || response.qrString || response.intentURIData || response.intentUrl || "";
         const acsTemplate = response.acsTemplate || "";
+        const isMandate = response?.type === "upi_autopay_s2s";
 
         // PhonePe mobile intent: launch the deeplink and start polling.
         if (isPhonePe && isMobileDevice && deeplink) {
           window.location.href = deeplink;
           setStatus("pending");
-          setStatusMessage("Opening PhonePe app...");
+          setStatusMessage(isMandate ? "Opening UPI app to authorise mandate..." : "Opening PhonePe app...");
           startPolling();
           return;
         }
@@ -570,7 +642,7 @@ export default function CheckoutPage() {
         if (!isPhonePe && isMobileDevice && deeplink) {
           window.location.href = deeplink;
           setStatus("pending");
-          setStatusMessage("Opening UPI app...");
+          setStatusMessage(isMandate ? "Opening UPI app to authorise mandate..." : "Opening UPI app...");
           startPolling();
           return;
         }
@@ -583,7 +655,7 @@ export default function CheckoutPage() {
         });
         setShowQr(true);
         setStatus("pending");
-        setStatusMessage("Scan QR code with UPI app to pay");
+        setStatusMessage(isMandate ? "Scan QR with UPI app to authorise your mandate" : "Scan QR code with UPI app to pay");
         startPolling();
         return;
       }
@@ -1372,87 +1444,170 @@ export default function CheckoutPage() {
               </div>
             )}
 
-            {/* 4. AUTOPAY (eNACH) */}
+            {/* 4. AUTOPAY */}
             {activeTab === "autopay" && (
               <div className="flex flex-col gap-4 animate-slide-left overflow-y-auto h-full pb-2">
-                <div className="bg-violet-600/10 border border-violet-500/30 rounded-xl p-3 flex gap-2.5 items-start">
-                  <span className="text-base mt-0.5">🔄</span>
-                  <div>
-                    <p className="text-xs font-bold text-violet-300 mb-0.5">AutoPay via eNACH</p>
-                    <p className="text-[11px] text-slate-400 leading-relaxed">Authorise a one-time mandate to auto-debit future payments. Your bank will send an approval link or OTP.</p>
-                  </div>
+                {/* Method toggle: eNACH vs UPI AutoPay */}
+                <div className="flex gap-1.5 p-1 bg-slate-950/60 rounded-xl border border-slate-800/50">
+                  <button
+                    type="button"
+                    onClick={() => setAutopayMethod("enach")}
+                    className={`flex-1 py-2 px-3 text-[11px] font-bold rounded-lg transition-all ${
+                      autopayMethod === "enach"
+                        ? "bg-slate-800 text-white"
+                        : "text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    🏦 Net Banking (eNACH)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAutopayMethod("upi")}
+                    className={`flex-1 py-2 px-3 text-[11px] font-bold rounded-lg transition-all ${
+                      autopayMethod === "upi"
+                        ? "bg-slate-800 text-white"
+                        : "text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    ⚡ UPI AutoPay
+                  </button>
                 </div>
-                <form onSubmit={handleAutoPaySubmit} className="space-y-3 flex-1 flex flex-col">
-                  <div className="space-y-3 flex-1">
-                    <div>
-                      <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1.5">Account Number</label>
-                      <input
-                        type="text"
-                        value={autopayData.accountNumber}
-                        onChange={e => setAutopayData({ ...autopayData, accountNumber: e.target.value.replace(/\D/g, '') })}
-                        placeholder="Enter bank account number"
-                        className="w-full bg-slate-950 border border-slate-800 focus:border-violet-500 rounded-xl px-4 py-3.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none transition-all font-mono focus-ring"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1.5">IFSC Code</label>
-                      <input
-                        type="text"
-                        value={autopayData.ifsc}
-                        onChange={e => setAutopayData({ ...autopayData, ifsc: e.target.value.toUpperCase() })}
-                        placeholder="e.g. SBIN0001234"
-                        maxLength={11}
-                        className="w-full bg-slate-950 border border-slate-800 focus:border-violet-500 rounded-xl px-4 py-3.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none transition-all font-mono focus-ring"
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1.5">Account Holder Name</label>
-                      <input
-                        type="text"
-                        value={autopayData.accountName}
-                        onChange={e => setAutopayData({ ...autopayData, accountName: e.target.value })}
-                        placeholder="As per bank records"
-                        className="w-full bg-slate-950 border border-slate-800 focus:border-violet-500 rounded-xl px-4 py-3.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none transition-all focus-ring"
-                        required
-                      />
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
+
+                {/* eNACH form */}
+                {autopayMethod === "enach" && (
+                  <>
+                    <div className="bg-violet-600/10 border border-violet-500/30 rounded-xl p-3 flex gap-2.5 items-start">
+                      <span className="text-base mt-0.5">🔄</span>
                       <div>
-                        <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1.5">Bank Name</label>
-                        <input
-                          type="text"
-                          value={autopayData.bankName}
-                          onChange={e => setAutopayData({ ...autopayData, bankName: e.target.value })}
-                          placeholder="Bank name"
-                          className="w-full bg-slate-950 border border-slate-800 focus:border-violet-500 rounded-xl px-4 py-3.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none transition-all focus-ring"
-                          required
-                        />
+                        <p className="text-xs font-bold text-violet-300 mb-0.5">AutoPay via eNACH</p>
+                        <p className="text-[11px] text-slate-400 leading-relaxed">Authorise a one-time mandate to auto-debit future payments. Your bank will send an approval link or OTP.</p>
                       </div>
-                      <div>
-                        <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1.5">Max Amount (₹)</label>
-                        <input
-                          type="number"
-                          value={autopayData.maxAmount}
-                          onChange={e => setAutopayData({ ...autopayData, maxAmount: e.target.value })}
-                          placeholder="e.g. 10000"
-                          min="1"
-                          className="w-full bg-slate-950 border border-slate-800 focus:border-violet-500 rounded-xl px-4 py-3.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none transition-all focus-ring"
-                          required
-                        />
+                    </div>
+                    <form onSubmit={handleAutoPaySubmit} className="space-y-3 flex-1 flex flex-col">
+                      <div className="space-y-3 flex-1">
+                        <div>
+                          <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1.5">Account Number</label>
+                          <input
+                            type="text"
+                            value={autopayData.accountNumber}
+                            onChange={e => setAutopayData({ ...autopayData, accountNumber: e.target.value.replace(/\D/g, '') })}
+                            placeholder="Enter bank account number"
+                            className="w-full bg-slate-950 border border-slate-800 focus:border-violet-500 rounded-xl px-4 py-3.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none transition-all font-mono focus-ring"
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1.5">IFSC Code</label>
+                          <input
+                            type="text"
+                            value={autopayData.ifsc}
+                            onChange={e => setAutopayData({ ...autopayData, ifsc: e.target.value.toUpperCase() })}
+                            placeholder="e.g. SBIN0001234"
+                            maxLength={11}
+                            className="w-full bg-slate-950 border border-slate-800 focus:border-violet-500 rounded-xl px-4 py-3.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none transition-all font-mono focus-ring"
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1.5">Account Holder Name</label>
+                          <input
+                            type="text"
+                            value={autopayData.accountName}
+                            onChange={e => setAutopayData({ ...autopayData, accountName: e.target.value })}
+                            placeholder="As per bank records"
+                            className="w-full bg-slate-950 border border-slate-800 focus:border-violet-500 rounded-xl px-4 py-3.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none transition-all focus-ring"
+                            required
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1.5">Bank Name</label>
+                            <input
+                              type="text"
+                              value={autopayData.bankName}
+                              onChange={e => setAutopayData({ ...autopayData, bankName: e.target.value })}
+                              placeholder="Bank name"
+                              className="w-full bg-slate-950 border border-slate-800 focus:border-violet-500 rounded-xl px-4 py-3.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none transition-all focus-ring"
+                              required
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1.5">Max Amount (₹)</label>
+                            <input
+                              type="number"
+                              value={autopayData.maxAmount}
+                              onChange={e => setAutopayData({ ...autopayData, maxAmount: e.target.value })}
+                              placeholder="e.g. 10000"
+                              min="1"
+                              className="w-full bg-slate-950 border border-slate-800 focus:border-violet-500 rounded-xl px-4 py-3.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none transition-all focus-ring"
+                              required
+                            />
+                          </div>
                         </div>
                       </div>
-                    </div>
                       <button
-                    type="submit"
-                    disabled={!autopayData.accountNumber || !autopayData.ifsc || !autopayData.accountName}
-                    className="w-full mt-2 py-4 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 active:scale-[0.98] transition-all text-white font-bold rounded-xl text-sm shadow-lg shadow-indigo-600/20 disabled:opacity-50 disabled:grayscale focus-ring flex items-center justify-center gap-2 group"
-                  >
-                    <span>Authorise Mandate</span>
-                    <span className="group-hover:translate-x-1 transition-transform">→</span>
-                  </button>
-                </form>
+                        type="submit"
+                        disabled={!autopayData.accountNumber || !autopayData.ifsc || !autopayData.accountName}
+                        className="w-full mt-2 py-4 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 active:scale-[0.98] transition-all text-white font-bold rounded-xl text-sm shadow-lg shadow-indigo-600/20 disabled:opacity-50 disabled:grayscale focus-ring flex items-center justify-center gap-2 group"
+                      >
+                        <span>Authorise eNACH Mandate</span>
+                        <span className="group-hover:translate-x-1 transition-transform">→</span>
+                      </button>
+                    </form>
+                  </>
+                )}
+
+                {/* UPI AutoPay form */}
+                {autopayMethod === "upi" && (
+                  <>
+                    <div className="bg-indigo-600/10 border border-indigo-500/30 rounded-xl p-3 flex gap-2.5 items-start">
+                      <span className="text-base mt-0.5">⚡</span>
+                      <div>
+                        <p className="text-xs font-bold text-indigo-300 mb-0.5">AutoPay via UPI</p>
+                        <p className="text-[11px] text-slate-400 leading-relaxed">Enter your UPI ID. Your UPI app (GPay / PhonePe) will open and show a mandate approval screen.</p>
+                      </div>
+                    </div>
+                    <form onSubmit={handleUpiAutopaySubmit} className="space-y-3 flex-1 flex flex-col">
+                      <div className="space-y-3 flex-1">
+                        <div>
+                          <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1.5">UPI ID (VPA)</label>
+                          <input
+                            type="text"
+                            value={upiAutopayId}
+                            onChange={e => setUpiAutopayId(e.target.value)}
+                            placeholder="e.g. yourname@ybl"
+                            autoComplete="off"
+                            className="w-full bg-slate-950 border border-slate-800 focus:border-violet-500 rounded-xl px-4 py-3.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none transition-all focus-ring"
+                            required
+                          />
+                          <p className="text-[10px] text-slate-500 mt-1.5">Enter the UPI ID linked to your bank account for mandate registration.</p>
+                        </div>
+                        {isMobileDevice && (
+                          <div className="flex gap-2 justify-center pt-1">
+                            {[
+                              { id: "gpay", img: gpayImg, label: "GPay" },
+                              { id: "phonepe", img: phonepeImg, label: "PhonePe" },
+                              { id: "paytm", img: paytmImg, label: "Paytm" },
+                            ].map(app => (
+                              <div key={app.id} className="flex flex-col items-center gap-1 p-2 rounded-xl border border-slate-700/50 bg-slate-950/30">
+                                <img src={app.img} alt={app.label} className="w-8 h-8 object-contain" />
+                                <span className="text-[9px] font-bold text-slate-400">{app.label}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        type="submit"
+                        disabled={!upiAutopayId.trim()}
+                        className="w-full mt-2 py-4 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 active:scale-[0.98] transition-all text-white font-bold rounded-xl text-sm shadow-lg shadow-indigo-600/20 disabled:opacity-50 disabled:grayscale focus-ring flex items-center justify-center gap-2 group"
+                      >
+                        <span>Authorise UPI Mandate</span>
+                        <span className="group-hover:translate-x-1 transition-transform">→</span>
+                      </button>
+                    </form>
+                  </>
+                )}
               </div>
             )}
           </div>

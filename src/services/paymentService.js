@@ -150,10 +150,10 @@ export async function generateQrCode(accessKey, sessionData) {
     const data = await response.json();
 
     let finalQrData = "";
-    if (data?.deeplink) {
-      finalQrData = data.deeplink;
-    } else if (data?.qrString) {
-      finalQrData = data.qrString;
+    // Priority: upiUri is the canonical UPI QR string (upi://pay?...).
+    // deeplink (intent://...) is Android-only and NOT scannable as a QR code.
+    if (data?.upiUri) {
+      finalQrData = data.upiUri;
     } else if (data?.data?.instrumentResponse?.qrData) {
       finalQrData = data.data.instrumentResponse.qrData;
     } else if (data?.data?.instrumentResponse?.intentUrl) {
@@ -163,7 +163,12 @@ export async function generateQrCode(accessKey, sessionData) {
     } else if (data?.qrData) {
       finalQrData = data.qrData;
     } else if (data?.intentURIData) {
-      finalQrData = data.intentURIData;
+      finalQrData = `upi://pay?${data.intentURIData}`;
+    } else if (data?.qrString) {
+      finalQrData = data.qrString;
+    } else if (data?.deeplink) {
+      // Last resort: deeplink only works on Android devices, not as a QR
+      finalQrData = data.deeplink;
     }
 
     if (!finalQrData) {
