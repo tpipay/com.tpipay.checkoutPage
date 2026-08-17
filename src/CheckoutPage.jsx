@@ -976,6 +976,7 @@ export default function CheckoutPage() {
               <p className="text-sm text-slate-400 mb-6">This payment session has timed out. Please generate a new request from the merchant.</p>
               <button onClick={() => window.location.reload()} className="px-6 py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-medium transition-all">Reload Page</button>
             </div>
+            //test
           )}
 
           {singleMode ? (
