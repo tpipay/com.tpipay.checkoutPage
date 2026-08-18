@@ -211,9 +211,6 @@ export default function CheckoutPage() {
           if (!response.data.sessionExpiresAt) {
             response.data.sessionExpiresAt = defaultExpiresAt.current;
           }
-          if (response.data.sessionExpiresAt && Date.now() >= response.data.sessionExpiresAt) {
-            setSessionExpired(true);
-          }
 
           const params = new URLSearchParams(window.location.search);
           const redirectStatus = params.get("status");
@@ -235,10 +232,13 @@ export default function CheckoutPage() {
                 setStatus("failed");
                 setStatusMessage(statusResult.message || "Payment failed");
                 setPaymentResult(statusResult);
+              } else if (response.data.sessionExpiresAt && Date.now() >= response.data.sessionExpiresAt) {
+                setSessionExpired(true);
               }
             } catch (e) {
-
-
+              if (response.data.sessionExpiresAt && Date.now() >= response.data.sessionExpiresAt) {
+                setSessionExpired(true);
+              }
             }
           }
         } else {

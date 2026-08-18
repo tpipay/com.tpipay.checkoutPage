@@ -1,6 +1,6 @@
 function getApiBaseUrl() {
   const configured = import.meta.env.VITE_API_BASE_URL;
-
+    
   // 1) Prefer configured value if it is a non-empty string.
   if (typeof configured === "string" && configured.trim().length > 0) {
     return configured.trim().replace(/\/+$/, "");
