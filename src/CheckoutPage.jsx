@@ -25,17 +25,6 @@ const PROVIDER_METHOD_MAPPING = {
   },
 };
 
-// ─── PayU: UPI App → bankcode mapping ────────────────────────────────────────
-// PayU requires a specific bankcode per UPI app for the S2S intent flow.
-// When no specific app is selected, use INTENT which generates a generic QR.
-// Ref: PayU S2S Docs — bankcode param
-const PAYU_UPI_APP_BANKCODE = {
-  gpay:    "TEZ",      // Google Pay
-  phonepe: "PHONEPE", // PhonePe
-  paytm:   "PAYTM",  // Paytm
-  default: "INTENT",  // Generic QR / any UPI app
-};
-
 // ─── UPI app list → Android package / iOS scheme ─────────────────────────────
 // Used to build app-specific deeplinks so tapping an app opens it directly:
 //   Android: intent://pay?{intentURIData}#Intent;scheme=upi;package=<pkg>;...;end
@@ -362,12 +351,10 @@ export default function CheckoutPage() {
   };
 
   const handleUpiIntentPay = () => {
-    // Resolve PayU-specific bankcode based on selected UPI app.
-    // Falls back to INTENT (generic QR) if no specific app selected.
-    const payuBankCode = !isPhonePe
-      ? (PAYU_UPI_APP_BANKCODE[selectedUpiApp] ?? PAYU_UPI_APP_BANKCODE.default)
-      : undefined;
-    chosenUpiAppRef.current = null; // generic button — no specific app to auto-open
+    // PayU: always use the generic INTENT bankcode (the only UPI code enabled on
+    // this merchant account — TEZ/PHONEPE/PAYTM return EX158). The selected app
+    // is passed as target_app so the backend builds an app-specific deeplink.
+    const payuBankCode = !isPhonePe ? "INTENT" : undefined;
 
     // For PhonePe: send device_os directly ("ANDROID" / "iOS" / "WEB").
     // The backend reads request.getDeviceOs() which maps to the `device_os` field.
@@ -403,18 +390,14 @@ export default function CheckoutPage() {
   // merchant account). App-specific codes (TEZ/PHONEPE/PAYTM) are NOT
   // provisioned and return EX158. target_app is still passed so the backend
   // builds an app-specific deeplink that opens the selected app.
+  // Select a UPI app only (no payment yet). The "Pay Securely" button below
+  // initiates the payment and then opens the chosen app — the Pay button tap is
+  // the real user gesture Chrome needs, so the app opens reliably.
   const handleUpiAppIconPay = (appId) => {
     if (isPhonePe) return; // PhonePe flow untouched
-    chosenUpiAppRef.current = appId; // remember the tapped app across the async call
-    setSelectedUpiApp(appId);
-    submitPayment({
-      access_key: accessKey,
-      payment_mode: PROVIDER_METHOD_MAPPING[activeProvider].UPI,
-      device_os: deviceOs === "iOS" ? "IOS" : "ANDROID",
-      bank_code: "INTENT",
-      upi_app_name: appId,
-      target_app: appId,
-    });
+    const isSelected = selectedUpiApp === appId;
+    setSelectedUpiApp(isSelected ? null : appId);
+    chosenUpiAppRef.current = isSelected ? null : appId;
   };
 
   const handleUpiPay = async (e) => {
@@ -1229,7 +1212,7 @@ export default function CheckoutPage() {
 
                     {/* QR Code box */}
                     <div className="relative">
-                      <div className={`bg-white p-4 rounded-2xl shadow-2xl shadow-black/50 border-4 border-slate-800 relative transition-all duration-300 ${qrExpired ? "opacity-30 grayscale" : "group hover:scale-105"}`}>
+                      <div className={`${isMobileDevice ? "hidden" : "bg-white p-4 rounded-2xl shadow-2xl shadow-black/50 border-4 border-slate-800 relative transition-all duration-300 group hover:scale-105"} ${qrExpired ? "opacity-30 grayscale" : ""}`}>
                         <div className="w-44 h-44 bg-white flex items-center justify-center">
                           {qrData?.qrData ? (
                             typeof qrData.qrData === 'string' && qrData.qrData.startsWith("upi://") ? (
@@ -1265,7 +1248,7 @@ export default function CheckoutPage() {
                           <span className="w-2 h-2 rounded-full bg-emerald-400 animate-status-dot" />
                           Waiting for payment…
                         </p>
-                        <p className="text-[11px] text-slate-500">Open any UPI app · Scan QR · Confirm ₹{amountStr}</p>
+                        <p className="text-[11px] text-slate-500">{isMobileDevice ? "Tap your UPI app · Confirm payment" : "Open any UPI app · Scan QR · Confirm"} ₹{amountStr}</p>
                         <div className="flex items-center justify-center gap-3 mt-2">
                           <img src={gpayImg} alt="GPay" className="h-6 object-contain opacity-80" />
                           <img src={phonepeImg} alt="PhonePe" className="h-6 object-contain opacity-80" />
