@@ -140,6 +140,8 @@ export default function CheckoutPage() {
   const [qrExpired, setQrExpired] = useState(false);
   const [autoQrGenerated, setAutoQrGenerated] = useState(false);
   const [selectedUpiApp, setSelectedUpiApp] = useState(null);
+  const [upiIntentData, setUpiIntentData] = useState(null); // pre-fetched intent URI so Pay can open the app synchronously
+  const [upiIntentLoading, setUpiIntentLoading] = useState(false);
 
   // const [autopayData, setAutopayData] = useState({ accountNumber: "", ifsc: "", accountName: "", bankName: "", maxAmount: "" });
   // const [autopayMethod, setAutopayMethod] = useState("enach"); // "enach" | "upi"
@@ -350,54 +352,101 @@ export default function CheckoutPage() {
     }
   };
 
-  const handleUpiIntentPay = () => {
-    // PayU: always use the generic INTENT bankcode (the only UPI code enabled on
-    // this merchant account — TEZ/PHONEPE/PAYTM return EX158). The selected app
-    // is passed as target_app so the backend builds an app-specific deeplink.
-    const payuBankCode = !isPhonePe ? "INTENT" : undefined;
+  // Pre-fetch the UPI intent data (intentURIData) so the Pay button can open the
+  // chosen app SYNCHRONOUSLY in its click handler — a genuine user gesture that
+  // Chrome always honours for intent:// URLs (the async path loses the gesture).
+  const initiateUpiIntent = useCallback(async (appId) => {
+    if (upiIntentData) return upiIntentData;
+    if (upiIntentLoading) return null;
+    setUpiIntentLoading(true);
+    try {
+      const payload = {
+        access_key: accessKey,
+        payment_mode: PROVIDER_METHOD_MAPPING[activeProvider].UPI,
+        device_os: deviceOs === "iOS" ? "IOS" : "ANDROID",
+        bank_code: "INTENT",
+        upi_app_name: appId,
+        target_app: appId,
+      };
+      const res = await processPayment(payload);
+      const uri = res?.intentURIData || res?.deeplink || res?.upiUri || "";
+      if (uri) {
+        setUpiIntentData(uri);
+        return uri;
+      }
+      setStatusMessage(res?.message || "Could not start the payment. Please try again.");
+      return null;
+    } catch (e) {
+      console.error("Initiate UPI intent error:", e);
+      setStatusMessage("Could not start the payment. Please try again.");
+      return null;
+    } finally {
+      setUpiIntentLoading(false);
+    }
+  }, [accessKey, activeProvider, deviceOs, isPhonePe, upiIntentData, upiIntentLoading]);
 
-    // For PhonePe: send device_os directly ("ANDROID" / "iOS" / "WEB").
-    // The backend reads request.getDeviceOs() which maps to the `device_os` field.
-    // For PayU/legacy: keep the old casing ("IOS" / "ANDROID") for backward compat.
+  // Open the chosen UPI app. Runs synchronously inside the Pay button's click
+  // handler when the intent data was pre-fetched on app selection.
+  const openUpiAppNow = (appId, uri) => {
+    const href = buildUpiAppLink(appId, uri);
+    if (!href || href === "#") return false;
+    setShowQr(true);
+    setQrData({
+      qrData: uri.startsWith("upi://") ? uri : `upi://pay?${uri}`,
+      intentURIData: uri,
+      expiresAt: Date.now() + 15 * 60 * 1000,
+    });
+    setStatus("idle");
+    setStatusMessage(`Opening ${upiAppById(appId)?.label || "UPI"} to pay...`);
+    startPolling();
+    window.location.href = href; // real user gesture here — opens the app
+    return true;
+  };
+
+  // "Pay ₹X Securely" button.
+  const handleUpiIntentPay = async () => {
+    if (sessionExpired) return;
+    const appId = chosenUpiAppRef.current;
+
+    // If an app was selected, pre-fetch intent data on selection — so by the time
+    // the user taps Pay, we can open the app synchronously (real gesture).
+    if (appId) {
+      let uri = upiIntentData;
+      if (!uri) {
+        uri = await initiateUpiIntent(appId);
+      }
+      if (uri && openUpiAppNow(appId, uri)) return;
+    }
+
+    // Fallback (no app selected, or initiation not ready): use the normal submit
+    // flow which shows the QR screen with tap-to-open app links.
+    const payuBankCode = !isPhonePe ? "INTENT" : undefined;
     let resolvedDeviceOs = deviceOs;
     if (!isPhonePe) {
-      // PayU legacy casing
       if (deviceOs === "WEB") resolvedDeviceOs = "ANDROID";
       else if (deviceOs === "iOS") resolvedDeviceOs = "IOS";
     }
-
     submitPayment({
       access_key: accessKey,
       payment_mode: PROVIDER_METHOD_MAPPING[activeProvider].UPI,
       device_os: resolvedDeviceOs,
-      // PhonePe: send deviceContext.deviceOS so the backend detects mobile and returns an intent URL.
-      // The backend maps request.getDeviceOs() to device_os but also requires deviceContext.deviceOS
-      // to differentiate intent (mobile) from QR (desktop) in the PhonePe API response.
       ...(isPhonePe && { deviceContext: { deviceOS: deviceOs } }),
-      // PayU: bank_code drives which UPI app/flow is used on the backend
       ...(!isPhonePe && { bank_code: payuBankCode }),
-      // PayU: upi_app_name is an optional tracking param recommended by PayU docs
       ...(!isPhonePe && selectedUpiApp && { upi_app_name: selectedUpiApp }),
-      // Legacy target_app kept for backward compat with existing backend mapping
       ...(selectedUpiApp && { target_app: selectedUpiApp }),
     });
   };
 
-  // Pay directly through a specific UPI app on mobile (PayU only).
-  // Clicking an app icon initiates payment for that app, which opens the
-  // app directly via deeplink instead of redirecting to the PayU page.
-  // NOTE: Use the generic INTENT bankcode (the only UPI code enabled on this
-  // merchant account). App-specific codes (TEZ/PHONEPE/PAYTM) are NOT
-  // provisioned and return EX158. target_app is still passed so the backend
-  // builds an app-specific deeplink that opens the selected app.
-  // Select a UPI app only (no payment yet). The "Pay Securely" button below
-  // initiates the payment and then opens the chosen app — the Pay button tap is
-  // the real user gesture Chrome needs, so the app opens reliably.
+  // Select a UPI app and pre-fetch the intent data. No payment, no redirect yet —
+  // the Pay button does the actual launch (real gesture).
   const handleUpiAppIconPay = (appId) => {
     if (isPhonePe) return; // PhonePe flow untouched
     const isSelected = selectedUpiApp === appId;
     setSelectedUpiApp(isSelected ? null : appId);
     chosenUpiAppRef.current = isSelected ? null : appId;
+    if (!isSelected) {
+      initiateUpiIntent(appId); // pre-fetch so Pay can open the app synchronously
+    }
   };
 
   const handleUpiPay = async (e) => {
