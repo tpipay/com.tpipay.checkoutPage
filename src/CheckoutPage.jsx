@@ -35,6 +35,26 @@ const PAYU_UPI_APP_BANKCODE = {
   paytm:   "PAYTM",  // Paytm
   default: "INTENT",  // Generic QR / any UPI app
 };
+
+// ─── UPI app list → Android package / iOS scheme ─────────────────────────────
+// Used to build app-specific deeplinks so tapping an app opens it directly:
+//   Android: intent://pay?{intentURIData}#Intent;scheme=upi;package=<pkg>;...;end
+//   iOS:     <scheme>?{intentURIData}
+// Apps without a local image render a coloured initial instead.
+const UPI_APPS = [
+  { id: "gpay",    label: "GPay",    img: gpayImg,    initial: "G",
+    androidPkg: "com.google.android.apps.nbu.paisa.user", iosScheme: "gpay://upi/pay?" },
+  { id: "phonepe", label: "PhonePe", img: phonepeImg, initial: "P",
+    androidPkg: "com.phonepe.app", iosScheme: "phonepe://upi/pay?" },
+  { id: "paytm",   label: "Paytm",   img: paytmImg,   initial: "P",
+    androidPkg: "net.one97.paytm", iosScheme: "paytm://upi/pay?" },
+  { id: "bhim",    label: "BHIM",    img: null,       initial: "B",
+    androidPkg: "in.org.npci.upiapp", iosScheme: "bhim://upi/pay?" },
+  { id: "amazon",  label: "Amazon",  img: null,       initial: "A",
+    androidPkg: "in.amazon.mShop.android.shopping", iosScheme: "amazonpay://upi/pay?" },
+  { id: "cred",    label: "CRED",    img: null,       initial: "C",
+    androidPkg: "com.dreamplug.androidapp", iosScheme: "credpay://upi/pay?" },
+];
 // ──────────────────────────────────────────────────────────────────────────────
 
 export default function CheckoutPage() {
@@ -87,6 +107,41 @@ export default function CheckoutPage() {
     const fromWidth = window.innerWidth < 768;
     return fromUA || (fromTouch && fromWidth);
   }, []);
+
+  const upiAppById = (id) => UPI_APPS.find(a => a.id === id);
+
+  // Build an app-specific deeplink from the raw UPI intent URI.
+  // Android needs a full intent:// URI with an explicit package= so Chrome
+  // opens the target app directly. iOS uses the app's URL scheme.
+  const buildUpiAppLink = (appId, intentURIData) => {
+    if (!intentURIData) return "#";
+    const app = upiAppById(appId);
+    let raw = intentURIData;
+    if (raw.startsWith("upi://")) raw = raw.replace(/^upi:\/\/pay\??/, "");
+    else if (raw.startsWith("intent://")) raw = raw.replace(/^intent:\/\/pay\??/, "").split("#Intent")[0];
+    const fallbackUrl = encodeURIComponent(window.location.href);
+    if (deviceOs === "ANDROID") {
+      return app?.androidPkg
+        ? `intent://pay?${raw}#Intent;scheme=upi;package=${app.androidPkg};S.browser_fallback_url=${fallbackUrl};end`
+        : `upi://pay?${raw}`;
+    }
+    return app?.iosScheme ? `${app.iosScheme}${raw}` : `upi://pay?${raw}`;
+  };
+
+  // Open a UPI app by injecting a real <a> element and clicking it.
+  // Chrome on Android handles intent:// URLs from an <a> click reliably,
+  // unlike window.location.href assignment which can silently fail.
+  const launchUpiApp = (appId, intentURIData) => {
+    const href = buildUpiAppLink(appId, intentURIData);
+    if (!href || href === "#") return;
+    const link = document.createElement("a");
+    link.href = href;
+    link.rel = "noopener";
+    link.style.display = "none";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   const [showQr, setShowQr] = useState(false);
   const [qrData, setQrData] = useState(null);
@@ -639,11 +694,32 @@ export default function CheckoutPage() {
         }
 
         // PayU mobile: open the selected UPI app directly via deeplink (no PayU page).
+        // We show the QR screen with tap-to-open app links (real <a> hrefs) so it
+        // works reliably even if the auto-open attempt is blocked by the browser.
         if (!isPhonePe && isMobileDevice && deeplink) {
-          window.location.href = deeplink;
+          const intentURIData = response.intentURIData || "";
+          const chosenApp = selectedUpiApp;
+          const chosenLabel = chosenApp ? (upiAppById(chosenApp)?.label || "UPI") : "";
+
+          setQrData({
+            qrData: response.upiUri || (intentURIData ? `upi://pay?${intentURIData}` : deeplink),
+            intentURIData,
+            acsTemplate: acsTemplate,
+            expiresAt: Date.now() + 15 * 60 * 1000,
+          });
+          setShowQr(true);
           setStatus("pending");
-          setStatusMessage(isMandate ? "Opening UPI app to authorise mandate..." : "Opening UPI app...");
+          setStatusMessage(
+            isMandate
+              ? "Tap your UPI app to authorise your mandate"
+              : (chosenApp ? `Opening ${chosenLabel} to pay...` : "Tap your UPI app to pay")
+          );
           startPolling();
+
+          // Best-effort: open the tapped app immediately via a real <a> click.
+          if (chosenApp && intentURIData) {
+            setTimeout(() => launchUpiApp(chosenApp, intentURIData), 300);
+          }
           return;
         }
 
@@ -1033,12 +1109,8 @@ export default function CheckoutPage() {
                           You will be redirected to your UPI app to complete the payment securely.
                         </p>
                         {isMobileDevice && (
-                          <div className="flex gap-2 justify-center mb-3">
-                          {[
-                            { id: "gpay", img: gpayImg, label: "GPay" },
-                            { id: "phonepe", img: phonepeImg, label: "PhonePe" },
-                            { id: "paytm", img: paytmImg, label: "Paytm" },
-                          ].map(app => (
+                          <div className="grid grid-cols-3 gap-2 justify-center mb-3">
+                          {UPI_APPS.map(app => (
                             <button
                               key={app.id}
                               type="button"
@@ -1058,7 +1130,11 @@ export default function CheckoutPage() {
                                   : "border-slate-700/50 hover:border-slate-600 bg-slate-950/30"
                               }`}
                             >
-                              <img src={app.img} alt={app.label} className="w-8 h-8 object-contain" />
+                              {app.img ? (
+                                <img src={app.img} alt={app.label} className="w-8 h-8 object-contain" />
+                              ) : (
+                                <span className="w-8 h-8 rounded-full bg-violet-600/20 flex items-center justify-center text-[11px] font-black text-violet-300">{app.initial}</span>
+                              )}
                               <span className="text-[9px] font-bold text-slate-400">{app.label}</span>
                             </button>
                           ))}
@@ -1188,6 +1264,30 @@ export default function CheckoutPage() {
                           <img src={phonepeImg} alt="PhonePe" className="h-6 object-contain opacity-80" />
                           <img src={paytmImg} alt="Paytm" className="h-6 object-contain opacity-80" />
                         </div>
+                        {isMobileDevice && qrData?.intentURIData && (
+                          <div className="mt-3 w-full">
+                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">
+                              Or tap your UPI app to pay
+                            </p>
+                            <div className="grid grid-cols-3 gap-2">
+                              {UPI_APPS.map(app => (
+                                <a
+                                  key={app.id}
+                                  href={buildUpiAppLink(app.id, qrData.intentURIData)}
+                                  className="flex flex-col items-center gap-1 p-2 rounded-xl border border-slate-700/50 bg-slate-900 hover:border-violet-500 active:scale-95 transition-all"
+                                >
+                                  {app.img ? (
+                                    <img src={app.img} alt={app.label} className="w-7 h-7 object-contain" />
+                                  ) : (
+                                    <span className="w-7 h-7 rounded-full bg-violet-600/20 flex items-center justify-center text-[10px] font-black text-violet-300">{app.initial}</span>
+                                  )}
+                                  <span className="text-[9px] font-bold text-slate-300">{app.label}</span>
+                                </a>
+                              ))}
+                            </div>
+                            <p className="text-[9px] text-slate-500 mt-2">App not opening? Tap an app icon above or scan the QR.</p>
+                          </div>
+                        )}
                         {qrData?.acsTemplate && (
                           <button
                             onClick={() => {

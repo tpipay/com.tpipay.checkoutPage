@@ -180,7 +180,10 @@ export async function generateQrCode(accessKey, sessionData) {
       qrData: finalQrData,
       qrImage: null,
       expiresAt: Date.now() + (expirySeconds * 1000),
-      expireAfter: expirySeconds
+      expireAfter: expirySeconds,
+      // Raw UPI intent URI (pa=...&tr=...&am=...) so the checkout can build
+      // app-specific deeplinks (intent://...package=...) that open the chosen app.
+      intentURIData: data?.intentURIData || data?.data?.instrumentResponse?.intentURIData || data?.data?.intentURIData || null
     };
   } catch (error) {
     console.error("QR generation error:", error);
