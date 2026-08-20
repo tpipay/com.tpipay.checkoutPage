@@ -53,12 +53,12 @@ export default function CheckoutPage() {
 
   const allowedPaymentModes = session?.allowedPaymentModes;
   const singleMode = allowedPaymentModes?.length === 1 ? allowedPaymentModes[0].toUpperCase() : null;
-  const tabToModeMap = { upi: "UPI", netbanking: "NET_BANKING", cards: "CARD", autopay: "AUTOPAY" };
+  const tabToModeMap = { upi: "UPI", netbanking: "NET_BANKING", cards: "CARD" };
   const allTabs = [
     { id: "upi", icon: "⚡", label: "UPI" },
     { id: "netbanking", icon: "🏦", label: "Bank" },
     { id: "cards", icon: "💳", label: "Card" },
-    { id: "autopay", icon: "🔄", label: "AutoPay" }
+    // { id: "autopay", icon: "🔄", label: "AutoPay" }
   ];
   const visibleTabs = allowedPaymentModes
     ? allTabs.filter(t => allowedPaymentModes.map(m => m.toUpperCase()).includes(tabToModeMap[t.id]))
@@ -97,9 +97,9 @@ export default function CheckoutPage() {
   const [autoQrGenerated, setAutoQrGenerated] = useState(false);
   const [selectedUpiApp, setSelectedUpiApp] = useState(null);
 
-  const [autopayData, setAutopayData] = useState({ accountNumber: "", ifsc: "", accountName: "", bankName: "", maxAmount: "" });
-  const [autopayMethod, setAutopayMethod] = useState("enach"); // "enach" | "upi"
-  const [upiAutopayId, setUpiAutopayId] = useState("");
+  // const [autopayData, setAutopayData] = useState({ accountNumber: "", ifsc: "", accountName: "", bankName: "", maxAmount: "" });
+  // const [autopayMethod, setAutopayMethod] = useState("enach"); // "enach" | "upi"
+  // const [upiAutopayId, setUpiAutopayId] = useState("");
 
   const qrTimerRef = useRef(null);
 
