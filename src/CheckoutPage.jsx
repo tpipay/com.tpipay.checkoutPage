@@ -1272,10 +1272,19 @@ export default function CheckoutPage() {
                           <img src={paytmImg} alt="Paytm" className="h-6 object-contain opacity-80" />
                         </div>
                         {isMobileDevice && qrData?.intentURIData && (
-                          <div className="mt-3 w-full">
-                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">
-                              Or tap your UPI app to pay
+                          <div className="mt-3 w-full bg-slate-900/60 border border-violet-500/30 rounded-xl p-3">
+                            <p className="text-[10px] text-violet-300 font-bold uppercase tracking-wider mb-2 flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-status-dot" />
+                              {chosenUpiAppRef.current ? `Tap to open ${upiAppById(chosenUpiAppRef.current)?.label || "your UPI app"}` : "Choose your UPI app"}
                             </p>
+                            {chosenUpiAppRef.current && (
+                              <a
+                                href={buildUpiAppLink(chosenUpiAppRef.current, qrData.intentURIData)}
+                                className="flex items-center justify-center gap-2 w-full py-3 mb-2 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 active:scale-[0.98] text-white font-bold rounded-xl text-sm shadow-lg shadow-indigo-600/20 transition-all"
+                              >
+                                {upiAppById(chosenUpiAppRef.current)?.label || "UPI app"} to pay
+                              </a>
+                            )}
                             <div className="grid grid-cols-3 gap-2">
                               {UPI_APPS.map(app => (
                                 <a
@@ -1292,7 +1301,7 @@ export default function CheckoutPage() {
                                 </a>
                               ))}
                             </div>
-                            <p className="text-[9px] text-slate-500 mt-2">App not opening? Tap an app icon above or scan the QR.</p>
+                            <p className="text-[9px] text-slate-500 mt-2">Tap an app to open it directly — Chrome needs a real tap to launch UPI apps.</p>
                           </div>
                         )}
                         {qrData?.acsTemplate && (
