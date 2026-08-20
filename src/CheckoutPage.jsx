@@ -773,7 +773,9 @@ export default function CheckoutPage() {
         paymentResult={paymentResult}
         activeTab={activeTab}
         onRetry={() => {
-          if (status === "pending") {
+          if (status === "success") {
+            window.location.href = "https://merchant.tpipay.ai/create-payment-link";
+          } else if (status === "pending") {
             pollPaymentStatus(accessKey).then(result => {
               if (result.status === "SUCCESS") {
                 clearInterval(pollingInterval.current);
