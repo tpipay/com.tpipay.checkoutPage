@@ -170,6 +170,7 @@ export default function CheckoutPage() {
   const pollingInterval = useRef(null);
   const pollCountRef = useRef(0);
   const [intentUrl, setIntentUrl] = useState(null);
+  const chosenUpiAppRef = useRef(null); // app tapped before submit — survives async gap
 
   // Popular banks lists
   const popularBanks = [
@@ -366,6 +367,7 @@ export default function CheckoutPage() {
     const payuBankCode = !isPhonePe
       ? (PAYU_UPI_APP_BANKCODE[selectedUpiApp] ?? PAYU_UPI_APP_BANKCODE.default)
       : undefined;
+    chosenUpiAppRef.current = null; // generic button — no specific app to auto-open
 
     // For PhonePe: send device_os directly ("ANDROID" / "iOS" / "WEB").
     // The backend reads request.getDeviceOs() which maps to the `device_os` field.
@@ -403,6 +405,7 @@ export default function CheckoutPage() {
   // builds an app-specific deeplink that opens the selected app.
   const handleUpiAppIconPay = (appId) => {
     if (isPhonePe) return; // PhonePe flow untouched
+    chosenUpiAppRef.current = appId; // remember the tapped app across the async call
     setSelectedUpiApp(appId);
     submitPayment({
       access_key: accessKey,
@@ -694,11 +697,12 @@ export default function CheckoutPage() {
         }
 
         // PayU mobile: open the selected UPI app directly via deeplink (no PayU page).
-        // We show the QR screen with tap-to-open app links (real <a> hrefs) so it
-        // works reliably even if the auto-open attempt is blocked by the browser.
+        // We keep status "idle" so the QR screen with tap-to-open app links renders
+        // (real <a> hrefs = a genuine user gesture, which Chrome requires for
+        // intent:// URLs). Polling flips status to success/failed when done.
         if (!isPhonePe && isMobileDevice && deeplink) {
           const intentURIData = response.intentURIData || "";
-          const chosenApp = selectedUpiApp;
+          const chosenApp = chosenUpiAppRef.current;
           const chosenLabel = chosenApp ? (upiAppById(chosenApp)?.label || "UPI") : "";
 
           setQrData({
@@ -708,7 +712,7 @@ export default function CheckoutPage() {
             expiresAt: Date.now() + 15 * 60 * 1000,
           });
           setShowQr(true);
-          setStatus("pending");
+          setStatus("idle");
           setStatusMessage(
             isMandate
               ? "Tap your UPI app to authorise your mandate"
@@ -717,6 +721,8 @@ export default function CheckoutPage() {
           startPolling();
 
           // Best-effort: open the tapped app immediately via a real <a> click.
+          // If the browser blocks it (no user gesture), the app links on the QR
+          // screen let the user tap again — a genuine gesture that always works.
           if (chosenApp && intentURIData) {
             setTimeout(() => launchUpiApp(chosenApp, intentURIData), 300);
           }
@@ -725,7 +731,8 @@ export default function CheckoutPage() {
 
         // Web (desktop): show the QR only — never redirect to the PayU page.
         setQrData({
-          qrData: deeplink,
+          qrData: response.upiUri || (response.intentURIData ? `upi://pay?${response.intentURIData}` : deeplink),
+          intentURIData: response.intentURIData || null,
           acsTemplate: acsTemplate,
           expiresAt: Date.now() + 15 * 60 * 1000,
         });
