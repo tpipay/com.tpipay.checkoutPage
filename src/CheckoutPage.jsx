@@ -879,6 +879,13 @@ export default function CheckoutPage() {
     );
   }
 
+  const isForwardedCheckout = String(session?.requestFlow || "").toUpperCase() === "CUSTOM_CHECKOUT";
+
+  const handleBackToMerchant = () => {
+    const target = status === "success" ? session?.surl : session?.furl;
+    if (target) window.location.href = target;
+  };
+
   if (status !== "idle" && status !== "processing" && !intentUrl) {
     return (
       <OutcomeScreen
@@ -887,6 +894,7 @@ export default function CheckoutPage() {
         session={session}
         paymentResult={paymentResult}
         activeTab={activeTab}
+        onBackToMerchant={isForwardedCheckout ? handleBackToMerchant : undefined}
         onRetry={() => {
           if (status === "success") {
             window.location.href = "https://merchant.tpipay.ai/create-payment-link";

@@ -19,7 +19,7 @@ function CopyBtn({ text, label = "Copy" }) {
   );
 }
 
-export default function OutcomeScreen({ status, statusMessage, session, paymentResult, activeTab, onRetry }) {
+export default function OutcomeScreen({ status, statusMessage, session, paymentResult, activeTab, onRetry, onBackToMerchant }) {
   const isSuccess = status === "success";
   const isPending = status === "pending";
   const isFailed = status === "failed";
@@ -102,7 +102,7 @@ export default function OutcomeScreen({ status, statusMessage, session, paymentR
                 Download Receipt
               </button>
               <button
-                onClick={onRetry}
+                onClick={onBackToMerchant || onRetry}
                 className="w-full py-3 border border-slate-700 hover:border-slate-600 hover:bg-slate-800 transition-all text-slate-300 font-medium rounded-xl text-sm"
               >
                 Back to Merchant
@@ -116,6 +116,14 @@ export default function OutcomeScreen({ status, statusMessage, session, paymentR
               >
                 {isPending ? "Check Status" : "Retry Payment"}
               </button>
+              {onBackToMerchant && (
+                <button
+                  onClick={onBackToMerchant}
+                  className="w-full py-3 border border-slate-700 hover:border-slate-600 hover:bg-slate-800 transition-all text-slate-300 font-medium rounded-xl text-sm"
+                >
+                  Back to Merchant
+                </button>
+              )}
               <button
                 onClick={() => window.location.reload()}
                 className="w-full py-3 border border-slate-700 hover:border-slate-600 hover:bg-slate-800 transition-all text-slate-400 font-medium rounded-xl text-sm"
