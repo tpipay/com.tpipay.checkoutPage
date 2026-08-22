@@ -162,6 +162,7 @@ export default function CheckoutPage() {
   const pollCountRef = useRef(0);
   const [intentUrl, setIntentUrl] = useState(null);
   const chosenUpiAppRef = useRef(null); // app tapped before submit — survives async gap
+  const gatewayPopupRef = useRef(null); // blank tab opened for 3DS/bank redirect — closed on "Back to Merchant"
 
   // Popular banks lists
   const popularBanks = [
@@ -608,6 +609,7 @@ export default function CheckoutPage() {
     setStatus("processing");
 
     const redirectWin = window.open("", "_blank");
+    gatewayPopupRef.current = redirectWin;
 
     try {
       const response = await processPayment(payload);
@@ -897,7 +899,12 @@ export default function CheckoutPage() {
         onBackToMerchant={isForwardedCheckout ? handleBackToMerchant : undefined}
         onRetry={() => {
           if (status === "success") {
-            window.location.href = "https://merchant.tpipay.ai/create-payment-link";
+            // Best-effort: close the blank/gateway tab opened during payment
+            try { gatewayPopupRef.current?.close(); } catch { /* cross-origin tabs cannot be closed */ }
+            const returnUrl = (import.meta.env.VITE_MERCHANT_RETURN_URL || "https://merchant.tpipay.ai/payment-tracker").replace(/\/+$/, "");
+            const orderIdParam = session?.orderId ? `?orderId=${encodeURIComponent(session.orderId)}` : "";
+            // replace() so the checkout page is not left in the browser history
+            window.location.replace(`${returnUrl}${orderIdParam}`);
           } else if (status === "pending") {
             pollPaymentStatus(accessKey).then(result => {
               if (result.status === "SUCCESS") {
