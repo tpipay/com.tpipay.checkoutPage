@@ -881,6 +881,13 @@ export default function CheckoutPage() {
     );
   }
 
+  const isForwardedCheckout = String(session?.requestFlow || "").toUpperCase() === "CUSTOM_CHECKOUT";
+
+  const handleBackToMerchant = () => {
+    const target = status === "success" ? session?.surl : session?.furl;
+    if (target) window.location.href = target;
+  };
+
   if (status !== "idle" && status !== "processing" && !intentUrl) {
     return (
       <OutcomeScreen
@@ -889,6 +896,7 @@ export default function CheckoutPage() {
         session={session}
         paymentResult={paymentResult}
         activeTab={activeTab}
+        onBackToMerchant={isForwardedCheckout ? handleBackToMerchant : undefined}
         onRetry={() => {
           if (status === "success") {
             // Best-effort: close the blank/gateway tab opened during payment
