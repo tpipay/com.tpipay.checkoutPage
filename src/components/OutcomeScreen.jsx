@@ -19,26 +19,28 @@ function CopyBtn({ text, label = "Copy" }) {
   );
 }
 
-export default function OutcomeScreen({ status, statusMessage, session, paymentResult, activeTab, onRetry, onBackToMerchant, autoRedirectSec = 30 }) {
+export default function OutcomeScreen({ status, statusMessage, session, paymentResult, activeTab, onRetry, onBackToMerchant, autoRedirectSec = 5 }) {
   const isSuccess = status === "success";
   const isPending = status === "pending";
   const isFailed = status === "failed";
 
   const [countdown, setCountdown] = useState(autoRedirectSec);
 
+  const autoRedirectTarget = isSuccess ? onBackToMerchant || onRetry : undefined;
+
   useEffect(() => {
-    if (!isSuccess || !onBackToMerchant) return undefined;
+    if (!autoRedirectTarget) return undefined;
     let remaining = autoRedirectSec;
     const timer = setInterval(() => {
       remaining -= 1;
       setCountdown(remaining);
       if (remaining <= 0) {
         clearInterval(timer);
-        onBackToMerchant();
+        autoRedirectTarget();
       }
     }, 1000);
     return () => clearInterval(timer);
-  }, [isSuccess, onBackToMerchant, autoRedirectSec]);
+  }, [autoRedirectTarget, autoRedirectSec]);
 
   const txnId = paymentResult?.txnId || paymentResult?.transaction_id || session?.txnId || session?.txnid || session?.paymentId || "—";
   const amount = Number(session?.amount || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 });
@@ -111,14 +113,9 @@ export default function OutcomeScreen({ status, statusMessage, session, paymentR
           {/* Actions */}
           {isSuccess ? (
             <div className="w-full space-y-2">
-              {onBackToMerchant && countdown > 0 && (
+              {autoRedirectTarget && (
                 <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 animate-pulse">
-                  Auto-redirecting to merchant in {countdown}s…
-                </p>
-              )}
-              {onBackToMerchant && countdown <= 0 && (
-                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 animate-pulse">
-                  Redirecting to merchant…
+                  {countdown > 0 ? `Auto-redirecting to merchant in ${countdown}s…` : "Redirecting to merchant…"}
                 </p>
               )}
               <button
