@@ -19,7 +19,7 @@ function CopyBtn({ text, label = "Copy" }) {
   );
 }
 
-export default function OutcomeScreen({ status, statusMessage, session, paymentResult, activeTab, onRetry, onBackToMerchant }) {
+export default function OutcomeScreen({ status, statusMessage, session, paymentResult, activeTab, onRetry, onBackToMerchant, autoRedirectSec }) {
   const isSuccess = status === "success";
   const isPending = status === "pending";
   const isFailed = status === "failed";
@@ -95,6 +95,13 @@ export default function OutcomeScreen({ status, statusMessage, session, paymentR
           {/* Actions */}
           {isSuccess ? (
             <div className="w-full space-y-2">
+              {typeof autoRedirectSec === "number" && autoRedirectSec >= 0 && (
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 animate-pulse">
+                  {autoRedirectSec > 0
+                    ? `Auto-redirecting to merchant in ${autoRedirectSec}s…`
+                    : "Redirecting to merchant…"}
+                </p>
+              )}
               <button
                 onClick={() => window.print()}
                 className="w-full py-3 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 active:scale-[0.98] transition-all text-white font-semibold rounded-xl text-sm shadow-lg shadow-indigo-600/20"
