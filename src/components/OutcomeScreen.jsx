@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 function CopyBtn({ text, label = "Copy" }) {
   const [copied, setCopied] = useState(false);
@@ -19,10 +19,26 @@ function CopyBtn({ text, label = "Copy" }) {
   );
 }
 
-export default function OutcomeScreen({ status, statusMessage, session, paymentResult, activeTab, onRetry, onBackToMerchant }) {
+export default function OutcomeScreen({ status, statusMessage, session, paymentResult, activeTab, onRetry, onBackToMerchant, autoRedirectSec = 30 }) {
   const isSuccess = status === "success";
   const isPending = status === "pending";
   const isFailed = status === "failed";
+
+  const [countdown, setCountdown] = useState(autoRedirectSec);
+
+  useEffect(() => {
+    if (!isSuccess || !onBackToMerchant) return undefined;
+    let remaining = autoRedirectSec;
+    const timer = setInterval(() => {
+      remaining -= 1;
+      setCountdown(remaining);
+      if (remaining <= 0) {
+        clearInterval(timer);
+        onBackToMerchant();
+      }
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [isSuccess, onBackToMerchant, autoRedirectSec]);
 
   const txnId = paymentResult?.txnId || paymentResult?.transaction_id || session?.txnId || session?.txnid || session?.paymentId || "—";
   const amount = Number(session?.amount || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 });
@@ -95,6 +111,16 @@ export default function OutcomeScreen({ status, statusMessage, session, paymentR
           {/* Actions */}
           {isSuccess ? (
             <div className="w-full space-y-2">
+              {onBackToMerchant && countdown > 0 && (
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 animate-pulse">
+                  Auto-redirecting to merchant in {countdown}s…
+                </p>
+              )}
+              {onBackToMerchant && countdown <= 0 && (
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 animate-pulse">
+                  Redirecting to merchant…
+                </p>
+              )}
               <button
                 onClick={() => window.print()}
                 className="w-full py-3 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 active:scale-[0.98] transition-all text-white font-semibold rounded-xl text-sm shadow-lg shadow-indigo-600/20"

@@ -163,6 +163,33 @@ export default function CheckoutPage() {
   const [intentUrl, setIntentUrl] = useState(null);
   const chosenUpiAppRef = useRef(null); // app tapped before submit — survives async gap
   const gatewayPopupRef = useRef(null); // blank tab opened for 3DS/bank redirect — closed on "Back to Merchant"
+  const [autoRedirectSecs, setAutoRedirectSecs] = useState(null);
+
+  // Auto-return to the merchant after a successful payment — no click needed.
+  // Opened from the dashboard popup → focus that tab (its live tracker modal
+  // takes over). Shared/direct link → navigate to the payment tracker page.
+  const goBackToMerchant = useCallback(() => {
+    try { gatewayPopupRef.current?.close(); } catch { /* cross-origin tabs cannot be closed */ }
+    if (window.opener && !window.opener.closed) {
+      window.opener.focus();
+      window.close();
+    } else {
+      const returnUrl = (import.meta.env.VITE_MERCHANT_RETURN_URL || "https://merchant.tpipay.ai/payment-tracker").replace(/\/+$/, "");
+      const orderIdParam = session?.orderId ? `?orderId=${encodeURIComponent(session.orderId)}` : "";
+      window.location.replace(`${returnUrl}${orderIdParam}`);
+    }
+  }, [session]);
+
+  useEffect(() => {
+    if (status !== "success") { setAutoRedirectSecs(null); }
+  }, [status]);
+
+  useEffect(() => {
+    if (status !== "success" || autoRedirectSecs == null) return undefined;
+    if (autoRedirectSecs <= 0) { goBackToMerchant(); return undefined; }
+    const t = setTimeout(() => setAutoRedirectSecs((s) => (s ?? 1) - 1), 1000);
+    return () => clearTimeout(t);
+  }, [status, autoRedirectSecs, goBackToMerchant]);
 
   // Popular banks lists
   const popularBanks = [
@@ -896,15 +923,11 @@ export default function CheckoutPage() {
         session={session}
         paymentResult={paymentResult}
         activeTab={activeTab}
+        autoRedirectSec={autoRedirectSecs}
         onBackToMerchant={isForwardedCheckout ? handleBackToMerchant : undefined}
         onRetry={() => {
           if (status === "success") {
-            // Best-effort: close the blank/gateway tab opened during payment
-            try { gatewayPopupRef.current?.close(); } catch { /* cross-origin tabs cannot be closed */ }
-            const returnUrl = (import.meta.env.VITE_MERCHANT_RETURN_URL || "https://merchant.tpipay.ai/payment-tracker").replace(/\/+$/, "");
-            const orderIdParam = session?.orderId ? `?orderId=${encodeURIComponent(session.orderId)}` : "";
-            // replace() so the checkout page is not left in the browser history
-            window.location.replace(`${returnUrl}${orderIdParam}`);
+            goBackToMerchant();
           } else if (status === "pending") {
             pollPaymentStatus(accessKey).then(result => {
               if (result.status === "SUCCESS") {
