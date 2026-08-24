@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 function CopyBtn({ text, label = "Copy" }) {
   const [copied, setCopied] = useState(false);
@@ -19,10 +19,26 @@ function CopyBtn({ text, label = "Copy" }) {
   );
 }
 
-export default function OutcomeScreen({ status, statusMessage, session, paymentResult, activeTab, onRetry, onBackToMerchant, autoRedirectSec }) {
+export default function OutcomeScreen({ status, statusMessage, session, paymentResult, activeTab, onRetry, onBackToMerchant, autoRedirectSec = 30 }) {
   const isSuccess = status === "success";
   const isPending = status === "pending";
   const isFailed = status === "failed";
+
+  const [countdown, setCountdown] = useState(autoRedirectSec);
+
+  useEffect(() => {
+    if (!isSuccess || !onBackToMerchant) return undefined;
+    let remaining = autoRedirectSec;
+    const timer = setInterval(() => {
+      remaining -= 1;
+      setCountdown(remaining);
+      if (remaining <= 0) {
+        clearInterval(timer);
+        onBackToMerchant();
+      }
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [isSuccess, onBackToMerchant, autoRedirectSec]);
 
   const txnId = paymentResult?.txnId || paymentResult?.transaction_id || session?.txnId || session?.txnid || session?.paymentId || "—";
   const amount = Number(session?.amount || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 });
@@ -95,11 +111,14 @@ export default function OutcomeScreen({ status, statusMessage, session, paymentR
           {/* Actions */}
           {isSuccess ? (
             <div className="w-full space-y-2">
-              {typeof autoRedirectSec === "number" && autoRedirectSec >= 0 && (
+              {onBackToMerchant && countdown > 0 && (
                 <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 animate-pulse">
-                  {autoRedirectSec > 0
-                    ? `Auto-redirecting to merchant in ${autoRedirectSec}s…`
-                    : "Redirecting to merchant…"}
+                  Auto-redirecting to merchant in {countdown}s…
+                </p>
+              )}
+              {onBackToMerchant && countdown <= 0 && (
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 animate-pulse">
+                  Redirecting to merchant…
                 </p>
               )}
               <button
