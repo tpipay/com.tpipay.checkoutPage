@@ -893,10 +893,18 @@ export default function CheckoutPage() {
           if (status === "success") {
             // Best-effort: close the blank/gateway tab opened during payment
             try { gatewayPopupRef.current?.close(); } catch { /* cross-origin tabs cannot be closed */ }
-            const returnUrl = (import.meta.env.VITE_MERCHANT_RETURN_URL || "https://merchant.tpipay.ai/payment-tracker").replace(/\/+$/, "");
-            const orderIdParam = session?.orderId ? `?orderId=${encodeURIComponent(session.orderId)}` : "";
-            // replace() so the checkout page is not left in the browser history
-            window.location.replace(`${returnUrl}${orderIdParam}`);
+            if (window.opener && !window.opener.closed) {
+              // Opened from the merchant dashboard ("Done" popup): close this tab
+              // and hand control back to the dashboard (which already shows its
+              // live tracking modal) instead of spawning a second tracker tab.
+              window.opener.focus();
+              window.close();
+            } else {
+              const returnUrl = (import.meta.env.VITE_MERCHANT_RETURN_URL || "https://merchant.tpipay.ai/payment-tracker").replace(/\/+$/, "");
+              const orderIdParam = session?.orderId ? `?orderId=${encodeURIComponent(session.orderId)}` : "";
+              // replace() so the checkout page is not left in the browser history
+              window.location.replace(`${returnUrl}${orderIdParam}`);
+            }
           } else if (status === "pending") {
             pollPaymentStatus(accessKey).then(result => {
               if (result.status === "SUCCESS") {
