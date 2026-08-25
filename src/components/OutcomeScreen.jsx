@@ -63,10 +63,12 @@ export default function OutcomeScreen({ status, statusMessage, session, paymentR
     <>
       {/* Bottom-right countdown badge */}
       {autoRedirectTarget && (
-        <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2 bg-slate-900/95 border border-violet-500/40 rounded-full px-4 py-2 shadow-2xl shadow-black/50 backdrop-blur-sm">
-          <div className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-          <span className="text-lg font-black font-mono tabular-nums text-white">{countdown}</span>
-          <span className="text-[10px] text-slate-400">Redirecting…</span>
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 bg-slate-900/95 border border-violet-500/50 rounded-2xl px-5 py-3 shadow-2xl shadow-black/50 backdrop-blur-sm">
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-full bg-emerald-400 animate-ping" />
+            <span className="text-2xl font-black font-mono tabular-nums text-white leading-none">{countdown}</span>
+          </div>
+          <span className="text-sm font-bold text-slate-300">Redirecting…</span>
         </div>
       )}
 
