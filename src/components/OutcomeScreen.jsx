@@ -59,7 +59,17 @@ export default function OutcomeScreen({ status, statusMessage, session, paymentR
   const reason = paymentResult?.reason ? (failureReasons[paymentResult.reason] || paymentResult.reason) : null;
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center font-sans p-4">
+    <>
+      {/* Bottom-right countdown badge */}
+      {autoRedirectTarget && (
+        <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2 bg-slate-900/95 border border-violet-500/40 rounded-full px-4 py-2 shadow-2xl shadow-black/50 backdrop-blur-sm">
+          <div className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+          <span className="text-xs font-bold font-mono tabular-nums text-white">{countdown}s</span>
+          <span className="text-[10px] text-slate-400">Redirecting…</span>
+        </div>
+      )}
+
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center font-sans p-4">
       <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl overflow-hidden relative animate-fade-in-scale">
         <div className={`absolute top-0 inset-x-0 h-1.5 ${isSuccess ? "bg-gradient-to-r from-emerald-500 to-teal-500" : isPending ? "bg-gradient-to-r from-amber-500 to-yellow-500" : "bg-gradient-to-r from-rose-600 to-red-500"}`} />
 
@@ -156,7 +166,8 @@ export default function OutcomeScreen({ status, statusMessage, session, paymentR
             </div>
           )}
         </div>
-      </div>
-    </div>
-  );
-}
+          </div>
+        </div>
+      </>
+    );
+  }
