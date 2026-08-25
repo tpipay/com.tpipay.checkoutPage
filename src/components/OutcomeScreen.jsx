@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 
 function CopyBtn({ text, label = "Copy" }) {
   const [copied, setCopied] = useState(false);
@@ -28,20 +28,24 @@ export default function OutcomeScreen({ status, statusMessage, session, paymentR
 
   const autoRedirectTarget = isSuccess ? onBackToMerchant || onRetry : undefined;
 
+  const targetRef = useRef(autoRedirectTarget);
+  targetRef.current = autoRedirectTarget;
+
   useEffect(() => {
-    if (!autoRedirectTarget) return undefined;
+    if (!isSuccess) return undefined;
     let remaining = autoRedirectSec || 5;
+    setCountdown(remaining);
     const timer = setInterval(() => {
       remaining -= 1;
       if (remaining <= 0) {
         clearInterval(timer);
-        autoRedirectTarget();
+        if (targetRef.current) targetRef.current();
         return;
       }
       setCountdown(remaining);
     }, 1000);
     return () => clearInterval(timer);
-  }, [autoRedirectTarget, autoRedirectSec]);
+  }, [isSuccess, autoRedirectSec]);
 
   const txnId = paymentResult?.txnId || paymentResult?.transaction_id || session?.txnId || session?.txnid || session?.paymentId || "—";
   const amount = Number(session?.amount || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 });
