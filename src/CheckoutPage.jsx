@@ -7,6 +7,9 @@ import OutcomeScreen from "./components/OutcomeScreen";
 import gpayImg from "./gpay.png";
 import phonepeImg from "./phonepe.png";
 import paytmImg from "./paytm.png";
+import bhimImg from "./assets/bhim.png";
+import amazonpayImg from "./assets/amazonpay.png";
+import credImg from "./assets/cred.png";
 import tpipayLogo from "./assets/tpipay-logo.png";
 
 // ─── Provider ➜ Gateway Method Mapping ───────────────────────────────────────
@@ -37,11 +40,11 @@ const UPI_APPS = [
     androidPkg: "com.phonepe.app", iosScheme: "phonepe://upi/pay?" },
   { id: "paytm",   label: "Paytm",   img: paytmImg,   initial: "P",
     androidPkg: "net.one97.paytm", iosScheme: "paytm://upi/pay?" },
-  { id: "bhim",    label: "BHIM",    img: null,       initial: "B",
+  { id: "bhim",    label: "BHIM",    img: bhimImg,    initial: "B",
     androidPkg: "in.org.npci.upiapp", iosScheme: "bhim://upi/pay?" },
-  { id: "amazon",  label: "Amazon",  img: null,       initial: "A",
+  { id: "amazon",  label: "Amazon",  img: amazonpayImg, initial: "A",
     androidPkg: "in.amazon.mShop.android.shopping", iosScheme: "amazonpay://upi/pay?" },
-  { id: "cred",    label: "CRED",    img: null,       initial: "C",
+  { id: "cred",    label: "CRED",    img: credImg,    initial: "C",
     androidPkg: "com.dreamplug.androidapp", iosScheme: "credpay://upi/pay?" },
 ];
 // ──────────────────────────────────────────────────────────────────────────────
@@ -84,9 +87,12 @@ export default function CheckoutPage() {
     return "WEB";
   }, []);
 
-  const isMobileDevice = useMemo(() => {
-    const ua = navigator.userAgent.toLowerCase();
-    return /android|iphone|ipad|ipod/i.test(ua);
+  const [isMobileDevice, setIsMobileDevice] = useState(() => window.innerWidth < 768);
+
+  useEffect(() => {
+    const check = () => setIsMobileDevice(window.innerWidth < 768);
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
   }, []);
 
   const isMobile = useMemo(() => {
@@ -1172,11 +1178,9 @@ export default function CheckoutPage() {
                 {!showQr ? (
                   <>
                     {/* ── UPI Intent section ─────────────────────────── */}
-                    {/* PhonePe desktop: skip intent, show QR only         */}
-                    {/* PhonePe mobile: show intent only                   */}
-                    {/* PayU web:        skip intent, show QR only         */}
-                    {/* PayU mobile:     show intent (app icons)           */}
-                    {!((isPhonePe || !isMobileDevice)) && (
+                    {/* Mobile-only: PayU shows app icons + Pay button     */}
+                    {/* PhonePe: hidden (uses different flow)              */}
+                    {!isPhonePe && isMobileDevice && (
                     <div className="block">
                       <div>
                         <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">
@@ -1230,12 +1234,19 @@ export default function CheckoutPage() {
                     </div>
                     )}
 
+                    {/* ── "or" divider ───────────────────────────────────── */}
+                    {!isPhonePe && isMobileDevice && (
+                      <div className="flex items-center gap-2 my-1">
+                        <div className="flex-1 h-px bg-slate-700/50" />
+                        <span className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">or</span>
+                        <div className="flex-1 h-px bg-slate-700/50" />
+                      </div>
+                    )}
+
                     {/* ── QR section ─────────────────────────────────────── */}
-                    {/* PhonePe: QR is shown only on desktop                  */}
-                    {/* PayU:    QR is secondary — show after a divider       */}
                     {isPhonePe ? (
                       /* PhonePe — QR is for desktop only */
-                      <div className={!isMobileDevice ? "block" : "hidden"}>
+                      <div className="block">
                         <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">
                           Pay via UPI QR
                         </label>
@@ -1258,7 +1269,7 @@ export default function CheckoutPage() {
                       </div>
                     ) : (
                       /* PayU — QR is the primary option on web (intent hidden on web) */
-                      <div className="hidden md:block">
+                      <div className="block">
                         <div>
                           <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">
                             Pay via UPI QR
@@ -1299,7 +1310,7 @@ export default function CheckoutPage() {
 
                     {/* QR Code box */}
                     <div className="relative">
-                      <div className={`${isMobileDevice ? "hidden" : "bg-white p-4 rounded-2xl shadow-2xl shadow-black/50 border-4 border-slate-800 relative transition-all duration-300 group hover:scale-105"} ${qrExpired ? "opacity-30 grayscale" : ""}`}>
+                      <div className={`bg-white p-4 rounded-2xl shadow-2xl shadow-black/50 border-4 border-slate-800 relative transition-all duration-300 group hover:scale-105 ${qrExpired ? "opacity-30 grayscale" : ""}`}>
                         <div className="w-44 h-44 bg-white flex items-center justify-center">
                           {qrData?.qrData ? (
                             typeof qrData.qrData === 'string' && qrData.qrData.startsWith("upi://") ? (
@@ -1335,13 +1346,13 @@ export default function CheckoutPage() {
                           <span className="w-2 h-2 rounded-full bg-emerald-400 animate-status-dot" />
                           Waiting for payment…
                         </p>
-                        <p className="text-[11px] text-slate-500">{isMobileDevice ? "Tap your UPI app · Confirm payment" : "Open any UPI app · Scan QR · Confirm"} ₹{amountStr}</p>
+                        <p className="text-[11px] text-slate-500">Open any UPI app · Scan QR or tap to pay · Confirm ₹{amountStr}</p>
                         <div className="flex items-center justify-center gap-3 mt-2">
                           <img src={gpayImg} alt="GPay" className="h-6 object-contain opacity-80" />
                           <img src={phonepeImg} alt="PhonePe" className="h-6 object-contain opacity-80" />
                           <img src={paytmImg} alt="Paytm" className="h-6 object-contain opacity-80" />
                         </div>
-                        {isMobileDevice && qrData?.intentURIData && (
+                        {deviceOs !== "WEB" && qrData?.intentURIData && (
                           <div className="mt-3 w-full bg-slate-900/60 border border-violet-500/30 rounded-xl p-3">
                             <p className="text-[10px] text-violet-300 font-bold uppercase tracking-wider mb-2 flex items-center gap-1">
                               <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-status-dot" />
