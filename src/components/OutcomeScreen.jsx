@@ -30,14 +30,15 @@ export default function OutcomeScreen({ status, statusMessage, session, paymentR
 
   useEffect(() => {
     if (!autoRedirectTarget) return undefined;
-    let remaining = autoRedirectSec;
+    let remaining = autoRedirectSec + 1;
     const timer = setInterval(() => {
       remaining -= 1;
-      setCountdown(remaining);
       if (remaining <= 0) {
         clearInterval(timer);
         autoRedirectTarget();
+        return;
       }
+      setCountdown(remaining);
     }, 1000);
     return () => clearInterval(timer);
   }, [autoRedirectTarget, autoRedirectSec]);
@@ -64,7 +65,7 @@ export default function OutcomeScreen({ status, statusMessage, session, paymentR
       {autoRedirectTarget && (
         <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2 bg-slate-900/95 border border-violet-500/40 rounded-full px-4 py-2 shadow-2xl shadow-black/50 backdrop-blur-sm">
           <div className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-          <span className="text-xs font-bold font-mono tabular-nums text-white">{countdown}s</span>
+          <span className="text-lg font-black font-mono tabular-nums text-white">{countdown}</span>
           <span className="text-[10px] text-slate-400">Redirecting…</span>
         </div>
       )}
