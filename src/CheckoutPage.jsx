@@ -65,16 +65,20 @@ export default function CheckoutPage() {
 
   const allowedPaymentModes = session?.allowedPaymentModes;
   const singleMode = allowedPaymentModes?.length === 1 ? allowedPaymentModes[0].toUpperCase() : null;
-  const tabToModeMap = { upi: "UPI", netbanking: "NET_BANKING", cards: "CARD" };
+  const tabToModeMap = { upi: "UPI", netbanking: "NET_BANKING", cards: "CARD", autopay: "AUTOPAY" };
   const allTabs = [
     { id: "upi", icon: "⚡", label: "UPI" },
     { id: "netbanking", icon: "🏦", label: "Bank" },
     { id: "cards", icon: "💳", label: "Card" },
-    // { id: "autopay", icon: "🔄", label: "AutoPay" }
+    { id: "autopay", icon: "🔄", label: "AutoPay" }
   ];
+  // AutoPay is a mandate-only flow. It must only appear when the session was
+  // created as an auto mandate (allowedPaymentModes includes AUTOPAY). Normal
+  // payment links (empty/null allowedPaymentModes) must NOT show AutoPay.
+  const normalTabs = allTabs.filter((t) => t.id !== "autopay");
   const visibleTabs = allowedPaymentModes
     ? allTabs.filter(t => allowedPaymentModes.map(m => m.toUpperCase()).includes(tabToModeMap[t.id]))
-    : allTabs;
+    : normalTabs;
 
   // Payment form states
   const [upiId, setUpiId] = useState("");
@@ -149,9 +153,9 @@ export default function CheckoutPage() {
   const [upiIntentData, setUpiIntentData] = useState(null); // pre-fetched intent URI so Pay can open the app synchronously
   const [upiIntentLoading, setUpiIntentLoading] = useState(false);
 
-  // const [autopayData, setAutopayData] = useState({ accountNumber: "", ifsc: "", accountName: "", bankName: "", maxAmount: "" });
-  // const [autopayMethod, setAutopayMethod] = useState("enach"); // "enach" | "upi"
-  // const [upiAutopayId, setUpiAutopayId] = useState("");
+  const [autopayData, setAutopayData] = useState({ accountNumber: "", ifsc: "", accountName: "", bankName: "", maxAmount: "" });
+  const [autopayMethod, setAutopayMethod] = useState("enach"); // "enach" | "upi"
+  const [upiAutopayId, setUpiAutopayId] = useState("");
 
   const qrTimerRef = useRef(null);
 
@@ -535,7 +539,8 @@ export default function CheckoutPage() {
     e.preventDefault();
     submitPayment({
       access_key: accessKey,
-      payment_mode: "AutoPay",
+      payment_mode: "ENACH",
+      bank_code: "ENACH",
       account_number: autopayData.accountNumber,
       ifsc_code: autopayData.ifsc,
       account_holder_name: autopayData.accountName,
