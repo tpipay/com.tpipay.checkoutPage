@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useParams } from "react-router-dom";
-import { fetchSession, processPayment, verifyUpiId, generateQrCode, pollPaymentStatus } from "./services/paymentService";
+import { fetchSession, processPayment, verifyUpiId, generateQrCode, pollPaymentStatus, submitNativeOtp } from "./services/paymentService";
 import QRCode from "react-qr-code";
 import SessionTimer from "./components/SessionTimer";
 import OutcomeScreen from "./components/OutcomeScreen";
@@ -54,6 +54,9 @@ export default function CheckoutPage() {
   // Page states
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [cardOtpRequired, setCardOtpRequired] = useState(false);
+  const [cardOtpInput, setCardOtpInput] = useState("");
+  const [cardOtpError, setCardOtpError] = useState("");
   const [status, setStatus] = useState("idle"); // idle | processing | success | failed | pending
   const [statusMessage, setStatusMessage] = useState("");
   const [paymentResult, setPaymentResult] = useState(null);
@@ -663,15 +666,60 @@ export default function CheckoutPage() {
           setStatusMessage(response?.message || `PayU ${response?.error || "rejected the request"}`);
           return;
         }
+        // Card 3DS could not be initiated (e.g. PayU risk denial / Not_Enrolled) — show a
+        // clear error instead of a blank screen. There is no ACS template or bank URL to render.
+        if (response?.type === "card_s2s"
+            && (response?.txnStatus === "Not_Enrolled" || response?.unmappedStatus === "failure" || !response?.acsTemplate)) {
+          if (redirectWin) redirectWin.close();
+          setStatus("failed");
+          setStatusMessage(response?.message || (response?.txnStatus === "Not_Enrolled"
+            ? "Payment could not be authenticated. Please try again or use a different card."
+            : "Payment could not be completed. Please try again or use a different card."));
+          return;
+        }
+        // PayU pure S2S with native OTP — show our own OTP entry form instead of any
+        // PayU-injected bank page, so the merchant/brand customer never sees PayU's URL.
+        if (response?.type === "card_s2s" && response?.nativeOtp === true) {
+          if (redirectWin) redirectWin.close();
+          setCardOtpRequired(true);
+          setCardOtpError("");
+          setStatus("processing"); // keep the "Processing Payment" overlay behind the OTP form
+          return;
+        }
         if (response?.acsTemplate) {
+          // Render PayU's ACS form behind a brand-neutral, full-screen "Redirecting to your bank…"
+          // overlay. We strip PayU's inline auto-submit so the form does NOT navigate away before
+          // the overlay is visible; instead we submit it ourselves after a short delay so the
+          // customer never sees PayU's branding/URL during the redirect to the real bank ACS.
           try {
+            let acsHtml = atob(response.acsTemplate);
+            // Remove PayU's auto-submit onload script so navigation waits for our overlay.
+            acsHtml = acsHtml
+              .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "")
+              .replace(/onload\s*=\s*["']?[^"'>]+["']?/gi, "");
+
+            const overlayDoc = "<!DOCTYPE html><html><head><meta charset='utf-8'><title>Secure Authentication</title>"
+              + "<style>html,body{margin:0;height:100%;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;}"
+              + "#payuOverlay{position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;"
+              + "gap:14px;background:#fff;}"
+              + ".spin{width:34px;height:34px;border:3px solid #e2e8f0;border-top-color:#2563eb;border-radius:50%;animation:r 0.8s linear infinite;}"
+              + "@keyframes r{to{transform:rotate(360deg)}}"
+              + ".msg{color:#0f172a;font-size:15px;text-align:center;}"
+              + "</style></head><body>"
+              + "<div id='payuOverlay'><div class='spin'></div><div class='msg'>Redirecting to your bank for secure authentication&hellip;</div></div>"
+              + acsHtml
+              + "<script>window.setTimeout(function(){"
+              + "  var f=document.forms['payment_post']||document.forms[0];"
+              + "  if(f){ f.submit(); }"
+              + "}, 800);</script>"
+              + "</body></html>";
             if (redirectWin) {
               redirectWin.document.open();
-              redirectWin.document.write(atob(response.acsTemplate));
+              redirectWin.document.write(overlayDoc);
               redirectWin.document.close();
             } else {
               document.open();
-              document.write(atob(response.acsTemplate));
+              document.write(overlayDoc);
               document.close();
               return;
             }
@@ -974,6 +1022,74 @@ export default function CheckoutPage() {
             <p className="text-sm text-slate-400 leading-relaxed">
               Securely authorizing transaction. Please do not close this window or hit refresh.
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* PAYU NATIVE OTP ENTRY MODAL */}
+      {cardOtpRequired && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl w-full max-w-sm animate-fade-in-scale overflow-hidden">
+            <div className="p-6 md:p-8">
+              <h3 className="text-xl font-bold text-white mb-1">Verify your transaction</h3>
+              <p className="text-sm text-slate-400 mb-5 leading-relaxed">
+                We sent a one-time password (OTP) to your registered mobile number. Enter it below to complete the payment securely.
+              </p>
+              <input
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                value={cardOtpInput}
+                onChange={(e) => { setCardOtpInput(e.target.value.replace(/\D/g, "")); setCardOtpError(""); }}
+                placeholder="Enter OTP"
+                className="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-center text-2xl tracking-[0.5em] text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-violet-500"
+              />
+              {cardOtpError && (
+                <p className="text-sm text-red-400 mt-3">{cardOtpError}</p>
+              )}
+              <div className="flex flex-col sm:flex-row items-stretch gap-3 mt-6">
+                <button
+                  type="button"
+                  disabled={cardOtpInput.length < 4}
+                  onClick={async () => {
+                    setCardOtpError("");
+                    setStatusMessage("Verifying OTP...");
+                    setStatus("processing");
+                    try {
+                      const res = await submitNativeOtp(accessKey, cardOtpInput);
+                      if (res?.status === "SUCCESS" || res?.status === "success" || res?.transactionStatus === "success") {
+                        setCardOtpRequired(false);
+                        setCardOtpInput("");
+                        setStatus("processing");
+                        startPolling();
+                      } else {
+                        setStatus("processing");
+                        setCardOtpError(res?.message || res?.msg || "Incorrect OTP. Please try again.");
+                      }
+                    } catch (e) {
+                      setCardOtpError("Could not submit OTP. Please try again.");
+                    }
+                  }}
+                  className="flex-1 py-3 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 active:scale-[0.98] transition-all text-white font-bold rounded-xl text-sm shadow-lg shadow-indigo-600/20 focus-ring disabled:opacity-50"
+                >
+                  Verify & Pay
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCardOtpRequired(false);
+                    setCardOtpInput("");
+                    setCardOtpError("");
+                    if (pollingInterval.current) clearInterval(pollingInterval.current);
+                    setStatus("failed");
+                    setStatusMessage("Payment not completed. Please try again.");
+                  }}
+                  className="flex-1 py-3 bg-slate-800/50 hover:bg-slate-800 active:scale-[0.98] transition-all text-slate-300 font-bold rounded-xl text-sm border border-slate-700/50 focus-ring"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

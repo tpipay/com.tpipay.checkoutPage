@@ -261,3 +261,29 @@ export async function processPayment(payload) {
     };
   }
 }
+
+/**
+ * Submit the customer-entered OTP for a PayU native OTP (pureS2S) card payment.
+ * @param {string} accessKey - the payment access key / txn id
+ * @param {string} otp - the OTP the customer received from their bank
+ */
+export async function submitNativeOtp(accessKey, otp) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/payment/payu/submit-otp`, {
+      method: "POST",
+      headers: {
+        "Accept": "application/json",
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ access_key: accessKey, otp })
+    });
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      return { status: "failed", message: errorData.message || `OTP submission failed (${response.status})` };
+    }
+    return await response.json();
+  } catch (error) {
+    console.error("API error submitting native OTP:", error);
+    return { status: "failed", message: "OTP submission failed. Please check your network and try again." };
+  }
+}
