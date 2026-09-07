@@ -183,22 +183,28 @@ export default function CheckoutPage() {
   // takes over). Shared/direct link → navigate to the payment tracker page.
   const goBackToMerchant = useCallback(() => {
     try { gatewayPopupRef.current?.close(); } catch { /* cross-origin tabs cannot be closed */ }
+    const returnUrl = (import.meta.env.VITE_MERCHANT_RETURN_URL || "https://merchant.tpipay.ai/payment-tracker").replace(/\/+$/, "");
+    const orderIdParam = session?.orderId ? `?orderId=${encodeURIComponent(session.orderId)}` : "";
+    const merchantUrl = `${returnUrl}${orderIdParam}`;
     if (window.opener && !window.opener.closed) {
       window.opener.focus();
       window.close();
+      setTimeout(() => {
+        if (!window.closed) {
+          window.location.replace(merchantUrl);
+        }
+      }, 300);
     } else {
-      const returnUrl = (import.meta.env.VITE_MERCHANT_RETURN_URL || "https://merchant.tpipay.ai/payment-tracker").replace(/\/+$/, "");
-      const orderIdParam = session?.orderId ? `?orderId=${encodeURIComponent(session.orderId)}` : "";
-      window.location.replace(`${returnUrl}${orderIdParam}`);
+      window.location.replace(merchantUrl);
     }
   }, [session]);
 
   useEffect(() => {
-    if (status !== "success") { setAutoRedirectSecs(null); }
+    if (status !== "success" && status !== "failed") { setAutoRedirectSecs(null); }
   }, [status]);
 
   useEffect(() => {
-    if (status !== "success" || autoRedirectSecs == null) return undefined;
+    if ((status !== "success" && status !== "failed") || autoRedirectSecs == null) return undefined;
     if (autoRedirectSecs <= 0) { goBackToMerchant(); return undefined; }
     const t = setTimeout(() => setAutoRedirectSecs((s) => (s ?? 1) - 1), 1000);
     return () => clearTimeout(t);
@@ -1000,7 +1006,7 @@ export default function CheckoutPage() {
         paymentResult={paymentResult}
         activeTab={activeTab}
         autoRedirectSec={autoRedirectSecs}
-        onBackToMerchant={isForwardedCheckout ? handleBackToMerchant : undefined}
+        onBackToMerchant={isForwardedCheckout ? handleBackToMerchant : goBackToMerchant}
         onRetry={() => {
           if (status === "success") {
             goBackToMerchant();

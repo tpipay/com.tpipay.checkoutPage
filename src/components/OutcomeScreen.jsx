@@ -26,13 +26,13 @@ export default function OutcomeScreen({ status, statusMessage, session, paymentR
 
   const [countdown, setCountdown] = useState(autoRedirectSec || 5);
 
-  const autoRedirectTarget = isSuccess ? onBackToMerchant || onRetry : undefined;
+  const autoRedirectTarget = (isSuccess || isFailed) ? onBackToMerchant || onRetry : undefined;
 
   const targetRef = useRef(autoRedirectTarget);
   targetRef.current = autoRedirectTarget;
 
   useEffect(() => {
-    if (!isSuccess) return undefined;
+    if (!isSuccess && !isFailed) return undefined;
     let remaining = autoRedirectSec || 5;
     setCountdown(remaining);
     const timer = setInterval(() => {
@@ -45,7 +45,7 @@ export default function OutcomeScreen({ status, statusMessage, session, paymentR
       setCountdown(remaining);
     }, 1000);
     return () => clearInterval(timer);
-  }, [isSuccess, autoRedirectSec]);
+  }, [isSuccess, isFailed, autoRedirectSec]);
 
   const txnId = paymentResult?.txnId || paymentResult?.transaction_id || session?.txnId || session?.txnid || session?.paymentId || "—";
   const amount = Number(session?.amount || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 });
@@ -150,6 +150,11 @@ export default function OutcomeScreen({ status, statusMessage, session, paymentR
             </div>
           ) : (
             <div className="w-full space-y-2">
+              {autoRedirectTarget && (
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 animate-pulse">
+                  {countdown > 0 ? `Auto-redirecting to merchant in ${countdown}s…` : "Redirecting to merchant…"}
+                </p>
+              )}
               <button
                 onClick={onRetry}
                 className="w-full py-3 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 active:scale-[0.98] transition-all text-white font-semibold rounded-xl text-sm shadow-lg"
