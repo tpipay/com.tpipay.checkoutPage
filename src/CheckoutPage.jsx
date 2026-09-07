@@ -649,8 +649,25 @@ export default function CheckoutPage() {
     if (sessionExpired) return;
     setStatus("processing");
 
-    const redirectWin = window.open("", "_blank");
-    gatewayPopupRef.current = redirectWin;
+    // Card payments stay on our own page for native OTP → never open a blank popup upfront
+    // (that caused an about:blank flash). For card flows where PayU still needs a bank page
+    // (ACS template / webview fallback) we open the popup lazily — and if the popup is blocked,
+    // we fall back to the current page. All other flows keep the eager popup so the browser
+    // still considers it part of the user gesture.
+    const isCardPay = payload?.payment_mode === PROVIDER_METHOD_MAPPING[activeProvider]?.CARD;
+    let redirectWin = null;
+    if (!isCardPay) {
+      redirectWin = window.open("", "_blank");
+      gatewayPopupRef.current = redirectWin;
+    }
+    const ensureRedirectWin = () => {
+      if (!isCardPay) return redirectWin;
+      if (!redirectWin || redirectWin.closed) {
+        redirectWin = window.open("", "_blank");
+        gatewayPopupRef.current = redirectWin;
+      }
+      return redirectWin;
+    };
 
     try {
       const response = await processPayment(payload);
@@ -713,7 +730,7 @@ export default function CheckoutPage() {
               + "  if(f){ f.submit(); }"
               + "}, 800);</script>"
               + "</body></html>";
-            if (redirectWin) {
+            if (ensureRedirectWin()) {
               redirectWin.document.open();
               redirectWin.document.write(overlayDoc);
               redirectWin.document.close();
@@ -728,7 +745,7 @@ export default function CheckoutPage() {
           }
         } else if (response?.otpPostUrl || response?.bankAuthUrl) {
           const bankUrl = response.otpPostUrl || response.bankAuthUrl;
-          if (redirectWin) {
+          if (ensureRedirectWin()) {
             redirectWin.location.href = bankUrl;
           } else {
             window.location.href = bankUrl;
