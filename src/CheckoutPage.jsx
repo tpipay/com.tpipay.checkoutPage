@@ -28,6 +28,39 @@ const PROVIDER_METHOD_MAPPING = {
   },
 };
 
+// ─── Bank code translation (PhonePe only) ────────────────────────────────────
+// The dropdown lists the PayU-format bank codes. PhonePe uses its own issuer
+// codes (see PhonePe "Supported Values" → Net Banking → Bank Codes), so the
+// same merchant bank is expressed differently per provider. These entries map
+// the local/PayU code to the PhonePe code. Used ONLY when the gateway is
+// PhonePe; PayU requests keep sending the original local codes unchanged.
+const PHONEPE_BANK_CODE_MAP = {
+  SBOI: "SBIN",     // State Bank of India
+  HDFC: "HDFC",     // HDFC Bank
+  ICIC: "ICIC",     // ICICI Bank
+  AXIS: "UTIB",     // Axis Bank
+  KOTK: "KKBK",     // Kotak Mahindra Bank
+  BARB: "BARB",     // Bank of Baroda
+  PUNB: "PUNB",     // Punjab National Bank (PNB)
+  CNRB: "CNRB",     // Canara Bank
+  UBIN: "UBIN",     // Union Bank of India
+  BKID: "BKID",     // Bank of India
+  CBIN: "CBIN",     // Central Bank of India
+  UCBA: "UCOBANK",  // UCO Bank
+  IBKL: "IBKL",     // IDBI Bank
+  IDFB: "IDFB",     // IDFC FIRST Bank
+  YESB: "YESB",     // Yes Bank
+  FDRL: "FDRL",     // Federal Bank
+  INDB: "INDB",     // IndusInd Bank
+  SIBL: "SIBL",     // South Indian Bank
+  KVBL: "KVBL",     // Karur Vysya Bank
+  RATN: "RATN",     // RBL Bank
+  TMBL: "TMBL",     // Tamilnad Mercantile Bank
+  SCBL: "SCBL",     // Standard Chartered Bank India
+};
+// Banks in the dropdown that have no PhonePe equivalent (IDIB, AUBL, KARB, HSBC,
+// CITI, OTHER) are hidden when the gateway is PhonePe so they can't be submitted.
+
 // ─── UPI app list → Android package / iOS scheme ─────────────────────────────
 // Used to build app-specific deeplinks so tapping an app opens it directly:
 //   Android: intent://pay?{intentURIData}#Intent;scheme=upi;package=<pkg>;...;end
@@ -200,11 +233,11 @@ export default function CheckoutPage() {
   }, [session]);
 
   useEffect(() => {
-    if (status !== "success" && status !== "failed") { setAutoRedirectSecs(null); }
+    if (status !== "success") { setAutoRedirectSecs(null); }
   }, [status]);
 
   useEffect(() => {
-    if ((status !== "success" && status !== "failed") || autoRedirectSecs == null) return undefined;
+    if (status !== "success" || autoRedirectSecs == null) return undefined;
     if (autoRedirectSecs <= 0) { goBackToMerchant(); return undefined; }
     const t = setTimeout(() => setAutoRedirectSecs((s) => (s ?? 1) - 1), 1000);
     return () => clearTimeout(t);
@@ -638,10 +671,13 @@ export default function CheckoutPage() {
   const handleNetbankingPay = (e) => {
     e.preventDefault();
     if (!selectedBank) return;
+    const bankCode = isPhonePe
+      ? (selectedBank === "OTHER" ? selectedBank : PHONEPE_BANK_CODE_MAP[selectedBank] || selectedBank)
+      : selectedBank;
     const payload = {
       access_key: accessKey,
       payment_mode: PROVIDER_METHOD_MAPPING[activeProvider].NET_BANKING,
-      bank_code: selectedBank,
+      bank_code: bankCode,
     };
     if (selectedBank === "OTHER") {
       payload.bank_name = otherBankData.bankName;
@@ -965,7 +1001,11 @@ export default function CheckoutPage() {
     }
   };
 
-  const filteredBanks = allBanks.filter((bank) =>
+  const visibleBanks = isPhonePe
+    ? allBanks.filter((bank) => PHONEPE_BANK_CODE_MAP[bank.code])
+    : allBanks;
+
+  const filteredBanks = visibleBanks.filter((bank) =>
     bank.name.toLowerCase().includes(bankSearch.toLowerCase())
   );
 
