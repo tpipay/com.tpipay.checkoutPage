@@ -1362,9 +1362,8 @@ export default function CheckoutPage() {
                 {!showQr ? (
                   <>
                     {/* ── UPI Intent section ─────────────────────────── */}
-                    {/* Mobile-only: PayU shows app icons + Pay button     */}
-                    {/* PhonePe: hidden (uses different flow)              */}
-                    {!isPhonePe && isMobileDevice && (
+                    {/* Mobile-only: app icons + Pay button for both PayU and PhonePe */}
+                    {isMobileDevice && (
                     <div className="block">
                       <div>
                         <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">
@@ -1419,7 +1418,7 @@ export default function CheckoutPage() {
                     )}
 
                     {/* ── "or" divider ───────────────────────────────────── */}
-                    {!isPhonePe && isMobileDevice && (
+                    {isMobileDevice && (
                       <div className="flex items-center gap-2 my-1">
                         <div className="flex-1 h-px bg-slate-700/50" />
                         <span className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">or</span>
